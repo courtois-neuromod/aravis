@@ -1,4 +1,4 @@
-project ('aravis', 'c', 'cpp', version: '0.8.5', meson_version: '>=0.47.0')
+project ('aravis', 'c', 'cpp', version: '0.8.11', meson_version: '>=0.47.0')
 
 gnome = import('gnome')
 pkg = import ('pkgconfig')
@@ -30,6 +30,9 @@ if cc.get_id()=='gcc' or cc.get_id()=='clang'
     '-Wmissing-include-dirs',
     '-Wmissing-prototypes',
     '-Wpointer-arith',
+    '-Wformat-nonliteral',
+    '-Wenum-conversion',
+    '-Wmaybe-uninitialized'
     ]
 
   add_project_arguments(cc.get_supported_arguments(warning_c_args), language: 'c')
@@ -51,20 +54,28 @@ if usb_dep.found()
 endif
 
 if host_machine.system()=='windows'
-	# socket functions need this library under Windows (winsock2)
-	ws2_32 = cc.find_library('ws2_32', required: true)
-	aravis_dependencies += ws2_32
+	aravis_dependencies += [
+		cc.find_library('ws2_32', required: true),  # socket functions
+		cc.find_library('iphlpapi', required: true) # GetAdaptersAddresses
+	]
 endif
 
-has_if_packet = cc.has_header (join_paths ('linux','if_packet.h'))
 packet_socket_option = get_option('packet-socket')
-if packet_socket_option.enabled()
-  if not has_if_packet
-    error ('missing header for packet-socket support')
-  endif
-  packet_socket_enabled = true
-else
-  packet_socket_enabled = has_if_packet and packet_socket_option.auto()
+if host_machine.system()=='linux'
+	has_if_packet = cc.has_header (join_paths ('linux','if_packet.h'))
+	if packet_socket_option.enabled()
+		if not has_if_packet
+			error ('missing header for packet-socket support')
+		endif
+		packet_socket_enabled = true
+	else
+		packet_socket_enabled = has_if_packet and packet_socket_option.auto()
+	endif
+else # not Linux
+	if packet_socket_option.enabled()
+		warning('packet-socket option ignored on non-Linux')
+	endif
+	packet_socket_enabled = false
 endif
 
 subdir ('src')

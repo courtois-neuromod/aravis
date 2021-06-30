@@ -1,3 +1,56 @@
+Stable release 0.8.10
+=====================
+
+  * arv-tool: make device enumeration faster (Emmanuel)
+  * debug: rework debug log levels (Emmanuel)
+  * fakegvcamera: improve streaming reliability - partly fix #499 (Emmanuel)
+  * gvstream: fix use after reference release - fix #504 (Emmanuel)
+  * genicam: String node support - fix #507 (Emmanuel)
+
+Stable release 0.8.9
+====================
+
+  * windows: build fix (Emmanuel)
+
+Stable release 0.8.8
+====================
+
+  * arv-camera-test: promote to installed application (Emmanuel)
+  * applications: fix policy parameter consistency (Emmanuel)
+  * debug: timestamped and modernized output (Emmanuel)
+  * genicam: add a range check debug mode (Emmanuel)
+  * gvdevice: faster finalization (Emmanuel)
+  * camera: new DeviceSerialNumber getter (Emmanuel)
+
+Stable release 0.8.7
+====================
+
+  * camera: ignore Acquisitiontart feature setting failure (Emmanuel)
+  * camera: fix trigger setting for Basler cameras (Casperoo)
+  * camera: add set_exposure API (Emmanuel)
+  * gigevision: Windows support (Václav)
+  * usb3vision: better error packet handling (Emmanuel)
+  * genicam: allow get/set float from an int node (Emmanuel)
+  * genicam: allow multiple pIndex property nodes (Emmanuel)
+
+Stable release 0.8.6
+====================
+
+  * camera: handle GainRaw also as a float feature
+  * camera: add arv_camera_new_with_device()
+  * camera: ignore error on TriggerSelector and TriggerMode setting in arv_camera_set_trigger()
+  * gigevision: fail quicker if a device is not found at ArvGvDevice instantiation
+  * fakegvcamera: fix interface selection
+  * genicam: implement optional range check for integer and float node values, as a runtime option
+  * genicam: fix min/max computation for StructEntry and MaskedIntReg nodes
+  * gstplugin: don't fail camera init if gain or exposure features are not available
+
+Stable release 0.8.5
+====================
+
+  * macOS: build fix
+  * travis:enable macOS
+
 Stable release 0.8.4
 ====================
 

@@ -92,7 +92,7 @@ arv_gv_discover_socket_list_new (void)
 									sizeof (struct sockaddr));
 		inet_address = g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_address));
 		inet_address_string = g_inet_address_to_string (inet_address);
-		arv_debug_interface ("[GvDiscoverSocket::new] Add interface %s", inet_address_string);
+		arv_info_interface ("[GvDiscoverSocket::new] Add interface %s", inet_address_string);
 		g_free (inet_address_string);
 		discover_socket->interface_address = g_inet_socket_address_new (inet_address, 0);
 		g_object_unref (socket_address);
@@ -117,6 +117,8 @@ arv_gv_discover_socket_list_new (void)
 		socket_list->poll_fds[i].revents = 0;
 	}
 
+	arv_gpollfd_prepare_all(socket_list->poll_fds, socket_list->n_sockets);
+
 	return socket_list;
 }
 
@@ -126,6 +128,8 @@ arv_gv_discover_socket_list_free (ArvGvDiscoverSocketList *socket_list)
 	GSList *iter;
 
 	g_return_if_fail (socket_list != NULL);
+
+	arv_gpollfd_finish_all (socket_list->poll_fds, socket_list->n_sockets);
 
 	for (iter = socket_list->sockets; iter != NULL; iter = iter->next) {
 		ArvGvDiscoverSocket *discover_socket = iter->data;
@@ -319,13 +323,25 @@ _discover (GHashTable *devices, const char *device_id)
 	arv_gv_discover_socket_list_send_discover_packet (socket_list);
 
 	do {
-		if (g_poll (socket_list->poll_fds, socket_list->n_sockets, ARV_GV_INTERFACE_DISCOVERY_TIMEOUT_MS) == 0) {
+		gint res;
+
+		res = g_poll (socket_list->poll_fds, socket_list->n_sockets, ARV_GV_INTERFACE_DISCOVERY_TIMEOUT_MS);
+		if (res <= 0) {
 			arv_gv_discover_socket_list_free (socket_list);
+
+			/* Timeout case */
+			if (res == 0)
+				return NULL;
+
+			g_critical ("g_poll returned %d (call was interrupted)", res);
+
 			return NULL;
 		}
 
 		for (i = 0, iter = socket_list->sockets; iter != NULL; i++, iter = iter->next) {
 			ArvGvDiscoverSocket *discover_socket = iter->data;
+
+			arv_gpollfd_clear_one (&socket_list->poll_fds[i], discover_socket->socket);
 
 			do {
 				g_socket_set_blocking (discover_socket->socket, FALSE);
@@ -343,7 +359,7 @@ _discover (GHashTable *devices, const char *device_id)
 						char *address_string;
 						char *data = buffer + sizeof (ArvGvcpHeader);
 
-						arv_gvcp_packet_debug (packet, ARV_DEBUG_LEVEL_LOG);
+						arv_gvcp_packet_debug (packet, ARV_DEBUG_LEVEL_DEBUG);
 
 						interface_address = g_inet_socket_address_get_address
 							(G_INET_SOCKET_ADDRESS (discover_socket->interface_address));
@@ -351,7 +367,7 @@ _discover (GHashTable *devices, const char *device_id)
 												  data);
 						address_string = g_inet_address_to_string (interface_address);
 
-						arv_debug_interface ("[GvInterface::discovery] Device '%s' found "
+						arv_info_interface ("[GvInterface::discovery] Device '%s' found "
 								     "(interface %s) user_id '%s' - MAC '%s'",
 								     device_infos->id,
 								     address_string,
@@ -531,6 +547,8 @@ arv_gv_interface_camera_locate (ArvGvInterface *gv_interface, GInetAddress *devi
 		for (i = 0, iter = socket_list->sockets; iter != NULL; i++, iter = iter->next) {
 			ArvGvDiscoverSocket *socket = iter->data;
 
+			arv_gpollfd_clear_one (&socket_list->poll_fds[i], socket->socket);
+
 			do {
 				g_socket_set_blocking (socket->socket, FALSE);
 				count = g_socket_receive (socket->socket, buffer,
@@ -662,8 +680,8 @@ arv_gv_interface_open_device (ArvInterface *interface, const char *device_id, GE
 	return NULL;
 }
 
-static ArvInterface *gv_interface = NULL;
-static GMutex gv_interface_mutex;
+static ArvInterface *arv_gv_interface = NULL;
+static GMutex arv_gv_interface_mutex;
 
 /**
  * arv_gv_interface_get_instance:
@@ -676,27 +694,27 @@ static GMutex gv_interface_mutex;
 ArvInterface *
 arv_gv_interface_get_instance (void)
 {
-	g_mutex_lock (&gv_interface_mutex);
+	g_mutex_lock (&arv_gv_interface_mutex);
 
-	if (gv_interface == NULL)
-		gv_interface = g_object_new (ARV_TYPE_GV_INTERFACE, NULL);
+	if (arv_gv_interface == NULL)
+		arv_gv_interface = g_object_new (ARV_TYPE_GV_INTERFACE, NULL);
 
-	g_mutex_unlock (&gv_interface_mutex);
+	g_mutex_unlock (&arv_gv_interface_mutex);
 
-	return ARV_INTERFACE (gv_interface);
+	return ARV_INTERFACE (arv_gv_interface);
 }
 
 void
 arv_gv_interface_destroy_instance (void)
 {
-	g_mutex_lock (&gv_interface_mutex);
+	g_mutex_lock (&arv_gv_interface_mutex);
 
-	if (gv_interface != NULL) {
-		g_object_unref (gv_interface);
-		gv_interface = NULL;
+	if (arv_gv_interface != NULL) {
+		g_object_unref (arv_gv_interface);
+		arv_gv_interface = NULL;
 	}
 
-	g_mutex_unlock (&gv_interface_mutex);
+	g_mutex_unlock (&arv_gv_interface_mutex);
 }
 
 static void

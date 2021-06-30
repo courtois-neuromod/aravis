@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2021 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -20,23 +20,24 @@
  * Author: Emmanuel Pacaud <emmanuel@gnome.org>
  */
 
-#include <arvviewertypes.h>
-#include <arv.h>
+#ifndef ARV_GC_STRING_NODE_H
+#define ARV_GC_STRING_NODE_H
+
+#if !defined (ARV_H_INSIDE) && !defined (ARAVIS_COMPILATION)
+#error "Only <arv.h> can be included directly."
+#endif
+
+#include <arvtypes.h>
+#include <arvgcfeaturenode.h>
+#include <arvgcpropertynode.h>
 
 G_BEGIN_DECLS
 
-#define ARV_TYPE_VIEWER             (arv_viewer_get_type ())
-#define ARV_IS_VIEWER(obj)          (G_TYPE_CHECK_INSTANCE_TYPE ((obj), ARV_TYPE_VIEWER))
+#define ARV_TYPE_GC_STRING_NODE             (arv_gc_string_node_get_type ())
+G_DECLARE_FINAL_TYPE (ArvGcStringNode, arv_gc_string_node, ARV, GC_STRING_NODE, ArvGcFeatureNode)
 
-GType 			arv_viewer_get_type 		(void);
-
-ArvViewer * 		arv_viewer_new 			(void);
-void			arv_viewer_set_options		(ArvViewer *viewer,
-							 gboolean auto_socket_buffer,
-							 gboolean packet_resend,
-							 guint packet_timeout,
-							 guint frame_retention,
-							 ArvRegisterCachePolicy register_cache_policy,
-							 ArvRangeCheckPolicy range_check_policy);
+ArvGcNode * 	arv_gc_string_node_new 		(void);
 
 G_END_DECLS
+
+#endif

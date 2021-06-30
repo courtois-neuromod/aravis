@@ -54,6 +54,7 @@ typedef struct {
 	ArvGcPropertyNode *is_available;
 	ArvGcPropertyNode *is_locked;
 	ArvGcPropertyNode *imposed_access_mode;
+	ArvGcPropertyNode *streamable;
 
 	guint64 change_count;
 
@@ -102,6 +103,9 @@ arv_gc_feature_node_post_new_child (ArvDomNode *self, ArvDomNode *child)
 				break;
 			case ARV_GC_PROPERTY_NODE_TYPE_IMPOSED_ACCESS_MODE:
 				priv->imposed_access_mode = property_node;
+				break;
+			case ARV_GC_PROPERTY_NODE_TYPE_STREAMABLE:
+				priv->streamable = property_node;		/* TODO */
 				break;
 			default:
 				break;
@@ -171,7 +175,7 @@ arv_gc_feature_node_set_attribute (ArvDomElement *self, const char *name, const 
 		else
 			priv->name_space = ARV_GC_NAME_SPACE_CUSTOM;
 	} else
-		arv_debug_dom ("[GcFeature::set_attribute] Unknown attribute '%s'", name);
+		arv_info_dom ("[GcFeature::set_attribute] Unknown attribute '%s'", name);
 }
 
 static const char *
@@ -189,7 +193,7 @@ arv_gc_feature_node_get_attribute (ArvDomElement *self, const char *name)
 				return "Custom";
 		}
 
-	arv_debug_dom ("[GcFeature::set_attribute] Unknown attribute '%s'", name);
+	arv_info_dom ("[GcFeature::set_attribute] Unknown attribute '%s'", name);
 
 	return NULL;
 }

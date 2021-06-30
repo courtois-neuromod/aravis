@@ -47,6 +47,7 @@
 #include <arvgcmaskedintregnode.h>
 #include <arvgcfloatregnode.h>
 #include <arvgcstringregnode.h>
+#include <arvgcstringnode.h>
 #include <arvgcstructregnode.h>
 #include <arvgcstructentrynode.h>
 #include <arvgccommand.h>
@@ -71,6 +72,7 @@ typedef struct {
 	ArvBuffer *buffer;
 
 	ArvRegisterCachePolicy cache_policy;
+	ArvRangeCheckPolicy range_check_policy;
 } ArvGcPrivate;
 
 struct _ArvGc {
@@ -120,6 +122,8 @@ arv_gc_create_element (ArvDomDocument *document, const char *tag_name)
 		node = arv_gc_masked_int_reg_node_new ();
 	else if (strcmp (tag_name, "FloatReg") == 0)
 		node = arv_gc_float_reg_node_new ();
+	else if (strcmp (tag_name, "String") == 0)
+		node = arv_gc_string_node_new ();
 	else if (strcmp (tag_name, "StringReg") == 0)
 		node = arv_gc_string_reg_node_new ();
 	else if (strcmp (tag_name, "StructReg") == 0)
@@ -247,6 +251,8 @@ arv_gc_create_element (ArvDomDocument *document, const char *tag_name)
 		node = arv_gc_property_node_new_bit ();
 	else if (strcmp (tag_name, "pInvalidator") == 0)
 		node = arv_gc_invalidator_node_new ();
+	else if (strcmp (tag_name, "Streamable") == 0)
+		node = arv_gc_property_node_new_streamable ();
 
 	else if (strcmp (tag_name, "CommandValue") == 0)
 		node = arv_gc_property_node_new_command_value ();
@@ -260,8 +266,10 @@ arv_gc_create_element (ArvDomDocument *document, const char *tag_name)
 
 	else if (strcmp (tag_name, "Group") == 0)
 		node = arv_gc_group_node_new ();
+	else if (strcmp (tag_name, "Extension") == 0)
+		node = NULL;
 	else
-		arv_debug_dom ("[Genicam::create_element] Unknown tag (%s)", tag_name);
+		arv_info_dom ("[Genicam::create_element] Unknown tag (%s)", tag_name);
 
 	return ARV_DOM_ELEMENT (node);
 }
@@ -322,7 +330,7 @@ arv_gc_register_feature_node (ArvGc *genicam, ArvGcFeatureNode *node)
 	g_hash_table_remove (genicam->priv->nodes, (char *) name);
 	g_hash_table_insert (genicam->priv->nodes, (char *) name, node);
 
-	arv_log_genicam ("[Gc::register_feature_node] Register node '%s' [%s]", name,
+	arv_debug_genicam ("[Gc::register_feature_node] Register node '%s' [%s]", name,
 			 arv_dom_node_get_node_name (ARV_DOM_NODE (node)));
 }
 
@@ -338,7 +346,7 @@ arv_gc_set_default_node_data (ArvGc *genicam, const char *node_name, ...)
 	if (arv_gc_get_node (genicam, node_name) != NULL)
 		return;
 
-	arv_debug_genicam ("[Gc::set_default_node_data] Add '%s'", node_name);
+	arv_info_genicam ("[Gc::set_default_node_data] Add '%s'", node_name);
 
 	va_start (args, node_name);
 	do {
@@ -363,6 +371,22 @@ arv_gc_get_register_cache_policy (ArvGc *genicam)
 	g_return_val_if_fail (ARV_IS_GC (genicam), ARV_REGISTER_CACHE_POLICY_DISABLE);
 
 	return genicam->priv->cache_policy;
+}
+
+void
+arv_gc_set_range_check_policy (ArvGc *genicam, ArvRangeCheckPolicy policy)
+{
+	g_return_if_fail (ARV_IS_GC (genicam));
+
+	genicam->priv->range_check_policy = policy;
+}
+
+ArvRangeCheckPolicy
+arv_gc_get_range_check_policy (ArvGc *genicam)
+{
+	g_return_val_if_fail (ARV_IS_GC (genicam), ARV_RANGE_CHECK_POLICY_DISABLE);
+
+	return genicam->priv->range_check_policy;
 }
 
 static void

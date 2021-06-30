@@ -42,15 +42,17 @@ struct _ArvCameraClass {
 };
 
 ArvCamera *	arv_camera_new			(const char *name, GError **error);
+ArvCamera * 	arv_camera_new_with_device 	(ArvDevice *device, GError **error);
 ArvDevice *	arv_camera_get_device		(ArvCamera *camera);
 
 ArvStream *	arv_camera_create_stream	(ArvCamera *camera, ArvStreamCallback callback, void *user_data, GError **error);
 
 /* Device informations */
 
-const char *	arv_camera_get_vendor_name	(ArvCamera *camera, GError **error);
-const char *	arv_camera_get_model_name	(ArvCamera *camera, GError **error);
-const char *	arv_camera_get_device_id	(ArvCamera *camera, GError **error);
+const char *	arv_camera_get_vendor_name		(ArvCamera *camera, GError **error);
+const char *	arv_camera_get_model_name		(ArvCamera *camera, GError **error);
+const char * 	arv_camera_get_device_serial_number 	(ArvCamera *camera, GError **error);
+const char *	arv_camera_get_device_id		(ArvCamera *camera, GError **error);
 
 /* Image format control */
 
@@ -119,6 +121,8 @@ void		arv_camera_get_exposure_time_bounds	(ArvCamera *camera, double *min, doubl
 void		arv_camera_set_exposure_time_auto	(ArvCamera *camera, ArvAuto auto_mode, GError **error);
 ArvAuto		arv_camera_get_exposure_time_auto	(ArvCamera *camera, GError **error);
 
+void		arv_camera_set_exposure_mode		(ArvCamera *camera, ArvExposureMode mode, GError **error);
+
 /* Analog control */
 
 gboolean 	arv_camera_is_gain_available		(ArvCamera *camera, GError **error);
@@ -163,6 +167,11 @@ const char ** 	arv_camera_dup_available_enumerations_as_display_names 	(ArvCamer
 
 gboolean 	arv_camera_is_feature_available 	(ArvCamera *camera, const char *feature, GError **error);
 
+/* Runtime policies */
+
+void		arv_camera_set_register_cache_policy	(ArvCamera *camera, ArvRegisterCachePolicy policy);
+void		arv_camera_set_range_check_policy	(ArvCamera *camera, ArvRangeCheckPolicy policy);
+
 /* GigEVision specific API */
 
 gboolean	arv_camera_is_gv_device			(ArvCamera *camera);
@@ -190,6 +199,8 @@ guint           arv_camera_uv_get_bandwidth             	(ArvCamera *camera, GEr
 void            arv_camera_uv_get_bandwidth_bounds      	(ArvCamera *camera, guint *min, guint *max, GError **error);
 
 /* Chunk data */
+
+gboolean		arv_camera_are_chunks_available		(ArvCamera *camera, GError **error);
 
 void 			arv_camera_set_chunk_mode 	(ArvCamera *camera, gboolean is_active, GError **error);
 gboolean 		arv_camera_get_chunk_mode 	(ArvCamera *camera, GError **error);

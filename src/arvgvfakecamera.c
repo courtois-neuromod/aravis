@@ -64,7 +64,7 @@ typedef struct {
 
 	gboolean is_running;
 
-	GPollFD socket_fds[3];
+	GPollFD socket_fds[ARV_GV_FAKE_CAMERA_N_INPUT_SOCKETS];
 	guint n_socket_fds;
 
 	GSocketAddress *controller_address;
@@ -144,7 +144,7 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 		write_access = TRUE;
 
 
-	arv_gvcp_packet_debug (packet, ARV_DEBUG_LEVEL_LOG);
+	arv_gvcp_packet_debug (packet, ARV_DEBUG_LEVEL_DEBUG);
 
 	packet_id = arv_gvcp_packet_get_packet_id (packet);
 	packet_type = arv_gvcp_packet_get_packet_type (packet);
@@ -157,13 +157,13 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 	switch (g_ntohs (packet->header.command)) {
 		case ARV_GVCP_COMMAND_DISCOVERY_CMD:
 			ack_packet = arv_gvcp_packet_new_discovery_ack (packet_id, &ack_packet_size);
-			arv_debug_device ("[GvFakeCamera::handle_control_packet] Discovery command");
+			arv_info_device ("[GvFakeCamera::handle_control_packet] Discovery command");
 			arv_fake_camera_read_memory (gv_fake_camera->priv->camera, 0, ARV_GVBS_DISCOVERY_DATA_SIZE,
 						     &ack_packet->data);
 			break;
 		case ARV_GVCP_COMMAND_READ_MEMORY_CMD:
 			arv_gvcp_packet_get_read_memory_cmd_infos (packet, &block_address, &block_size);
-			arv_debug_device ("[GvFakeCamera::handle_control_packet] Read memory command %d (%d)",
+			arv_info_device ("[GvFakeCamera::handle_control_packet] Read memory command %d (%d)",
 					  block_address, block_size);
 			ack_packet = arv_gvcp_packet_new_read_memory_ack (block_address, block_size,
 									  packet_id, &ack_packet_size);
@@ -178,7 +178,7 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 				break;
 			}
 
-			arv_debug_device ("[GvFakeCamera::handle_control_packet] Write memory command %d (%d)",
+			arv_info_device ("[GvFakeCamera::handle_control_packet] Write memory command %d (%d)",
 					  block_address, block_size);
 			arv_fake_camera_write_memory (gv_fake_camera->priv->camera, block_address, block_size,
 						      arv_gvcp_packet_get_write_memory_cmd_data (packet));
@@ -188,7 +188,7 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 		case ARV_GVCP_COMMAND_READ_REGISTER_CMD:
 			arv_gvcp_packet_get_read_register_cmd_infos (packet, &register_address);
 			arv_fake_camera_read_register (gv_fake_camera->priv->camera, register_address, &register_value);
-			arv_debug_device ("[GvFakeCamera::handle_control_packet] Read register command %d -> %d",
+			arv_info_device ("[GvFakeCamera::handle_control_packet] Read register command %d -> %d",
 					  register_address, register_value);
 			ack_packet = arv_gvcp_packet_new_read_register_ack (register_value, packet_id,
 									    &ack_packet_size);
@@ -206,7 +206,7 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 			}
 
 			arv_fake_camera_write_register (gv_fake_camera->priv->camera, register_address, register_value);
-			arv_debug_device ("[GvFakeCamera::handle_control_packet] Write register command %d -> %d",
+			arv_info_device ("[GvFakeCamera::handle_control_packet] Write register command %d -> %d",
 					  register_address, register_value);
 			ack_packet = arv_gvcp_packet_new_write_register_ack (1, packet_id,
 									     &ack_packet_size);
@@ -217,7 +217,7 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 
 	if (ack_packet != NULL) {
 		g_socket_send_to (socket, remote_address, (char *) ack_packet, ack_packet_size, NULL, NULL);
-		arv_gvcp_packet_debug (ack_packet, ARV_DEBUG_LEVEL_LOG);
+		arv_gvcp_packet_debug (ack_packet, ARV_DEBUG_LEVEL_DEBUG);
 		g_free (ack_packet);
 
 		success = TRUE;
@@ -226,14 +226,14 @@ _handle_control_packet (ArvGvFakeCamera *gv_fake_camera, GSocket *socket,
 	if (gv_fake_camera->priv->controller_address == NULL &&
 	    arv_fake_camera_get_control_channel_privilege (gv_fake_camera->priv->camera) != 0) {
 		g_object_ref (remote_address);
-		arv_debug_device("[GvFakeCamera::handle_control_packet] New controller");
+		arv_info_device("[GvFakeCamera::handle_control_packet] New controller");
 		gv_fake_camera->priv->controller_address = remote_address;
 		gv_fake_camera->priv->controller_time = g_get_real_time ();
 	}
 	else if (gv_fake_camera->priv->controller_address != NULL &&
 	    arv_fake_camera_get_control_channel_privilege (gv_fake_camera->priv->camera) == 0) {
 		g_object_unref (gv_fake_camera->priv->controller_address);
-		arv_debug_device("[GvFakeCamera::handle_control_packet] Controller releases");
+		arv_info_device("[GvFakeCamera::handle_control_packet] Controller releases");
 		gv_fake_camera->priv->controller_address = NULL;
 		gv_fake_camera->priv->controller_time = g_get_real_time ();
 	}
@@ -292,12 +292,14 @@ _thread (void *user_data)
 					if (G_IS_SOCKET (socket)) {
 						GSocketAddress *remote_address = NULL;
 
+						arv_gpollfd_clear_one (&gv_fake_camera->priv->socket_fds[i], socket);
+
 						count = g_socket_receive_message (socket, &remote_address, &input_vector, 1, NULL, NULL,
 										  NULL, NULL, NULL);
 						if (count > 0) {
 							if (_handle_control_packet (gv_fake_camera, socket,
 										    remote_address, input_vector.buffer, count))
-								arv_debug_device ("[GvFakeCamera::thread] Control packet received");
+								arv_info_device ("[GvFakeCamera::thread] Control packet received");
 						}
 						g_clear_object (&remote_address);
 					}
@@ -310,7 +312,7 @@ _thread (void *user_data)
 						stream_address = NULL;
 						g_object_unref (image_buffer);
 						image_buffer = NULL;
-						arv_debug_stream_thread ("[GvFakeCamera::thread] Stop stream");
+						arv_info_stream_thread ("[GvFakeCamera::thread] Stop stream");
 					}
 					is_streaming = FALSE;
 				}
@@ -327,7 +329,7 @@ _thread (void *user_data)
 				inet_address = g_inet_socket_address_get_address
 					(G_INET_SOCKET_ADDRESS (stream_address));
 				inet_address_string = g_inet_address_to_string (inet_address);
-				arv_debug_stream_thread ("[GvFakeCamera::thread] Start stream to %s (%d)",
+				arv_info_stream_thread ("[GvFakeCamera::thread] Start stream to %s (%d)",
 							 inet_address_string,
 							 g_inet_socket_address_get_port
 							 (G_INET_SOCKET_ADDRESS (stream_address)));
@@ -339,7 +341,7 @@ _thread (void *user_data)
 
 			arv_fake_camera_fill_buffer (gv_fake_camera->priv->camera, image_buffer, &gv_packet_size);
 
-			arv_debug_stream_thread ("[GvFakeCamera::thread] Send frame %" G_GUINT64_FORMAT, image_buffer->priv->frame_id);
+			arv_info_stream_thread ("[GvFakeCamera::thread] Send frame %" G_GUINT64_FORMAT, image_buffer->priv->frame_id);
 
 			block_id = 0;
 
@@ -356,7 +358,7 @@ _thread (void *user_data)
 				g_socket_send_to (gv_fake_camera->priv->gvsp_socket, stream_address,
 						  packet_buffer, packet_size, NULL, &error);
 			else
-				arv_debug_stream_thread ("Drop GVSP leader packet frame: %" G_GUINT64_FORMAT, image_buffer->priv->frame_id);
+				arv_info_stream_thread ("Drop GVSP leader packet frame: %" G_GUINT64_FORMAT, image_buffer->priv->frame_id);
 
 			if (error != NULL) {
 				arv_warning_stream_thread ("[GvFakeCamera::thread] Failed to send leader for frame %" G_GUINT64_FORMAT
@@ -382,11 +384,11 @@ _thread (void *user_data)
 					g_socket_send_to (gv_fake_camera->priv->gvsp_socket, stream_address,
 							  packet_buffer, packet_size, NULL, &error);
 				else
-					arv_debug_stream_thread ("Drop GVSP data packet frame:%" G_GUINT64_FORMAT
+					arv_info_stream_thread ("Drop GVSP data packet frame:%" G_GUINT64_FORMAT
 								 ", block:%u", image_buffer->priv->frame_id, block_id);
 
 				if (error != NULL) {
-					arv_debug_stream_thread ("[GvFakeCamera::thread] Failed to send frame block %d for frame"
+					arv_info_stream_thread ("[GvFakeCamera::thread] Failed to send frame block %d for frame"
 								 " %" G_GUINT64_FORMAT ": %s",
 								 block_id, image_buffer->priv->frame_id, error->message);
 					g_clear_error (&error);
@@ -404,11 +406,11 @@ _thread (void *user_data)
 				g_socket_send_to (gv_fake_camera->priv->gvsp_socket, stream_address,
 						  packet_buffer, packet_size, NULL, &error);
 			else
-				arv_debug_stream_thread ("Drop GVSP trailer packet frame: %" G_GUINT64_FORMAT,
+				arv_info_stream_thread ("Drop GVSP trailer packet frame: %" G_GUINT64_FORMAT,
 							 image_buffer->priv->frame_id);
 
 			if (error != NULL) {
-				arv_debug_stream_thread ("[GvFakeCamera::thread] Failed to send trailer for frame %" G_GUINT64_FORMAT
+				arv_info_stream_thread ("[GvFakeCamera::thread] Failed to send trailer for frame %" G_GUINT64_FORMAT
 							 ": %s", image_buffer->priv->frame_id, error->message);
 				g_clear_error (&error);
 			}
@@ -430,7 +432,9 @@ _thread (void *user_data)
 }
 
 static gboolean
-_create_and_bind_input_socket (GSocket **socket_out, const char *socket_name, GInetAddress *inet_address, unsigned int port, gboolean allow_reuse, gboolean blocking)
+_create_and_bind_input_socket (GSocket **socket_out, const char *socket_name,
+			       GInetAddress *inet_address, unsigned int port,
+			       gboolean allow_reuse, gboolean blocking)
 {
 	GSocket *socket;
 	GSocketAddress *socket_address;
@@ -440,9 +444,9 @@ _create_and_bind_input_socket (GSocket **socket_out, const char *socket_name, GI
 
 	address_string = g_inet_address_to_string (inet_address);
 	if (port > 0)
-		arv_debug_device ("%s address = %s:%d",socket_name,  address_string, port);
+		arv_info_device ("%s address = %s:%d",socket_name,  address_string, port);
 	else
-		arv_debug_device ("%s address = %s",socket_name,  address_string);
+		arv_info_device ("%s address = %s",socket_name,  address_string);
 	g_clear_pointer (&address_string, g_free);
 
 	socket = g_socket_new (G_SOCKET_FAMILY_IPV4, G_SOCKET_TYPE_DATAGRAM, G_SOCKET_PROTOCOL_UDP, NULL);
@@ -462,7 +466,7 @@ _create_and_bind_input_socket (GSocket **socket_out, const char *socket_name, GI
 	g_clear_object (&socket_address);
 
 	if (success)
-		g_socket_set_blocking (socket, FALSE);
+		g_socket_set_blocking (socket, blocking);
 	else
 		g_clear_object (&socket);
 
@@ -488,61 +492,66 @@ arv_gv_fake_camera_start (ArvGvFakeCamera *gv_fake_camera)
 	}
 
 	for (iface_iter = ifaces; iface_iter != NULL && !interface_found; iface_iter = iface_iter->next) {
-		GSocketAddress *socket_address;
-		GInetAddress *inet_address;
-		GInetAddress *gvcp_inet_address;
-		unsigned int n_socket_fds;
-		unsigned int i;
-		socket_address = g_socket_address_new_from_native (arv_network_interface_get_addr(iface_iter->data),
-								   sizeof (struct sockaddr));
-		gvcp_inet_address = g_object_ref (g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_address)));
-		g_clear_object (&socket_address);
-		arv_fake_camera_set_inet_address (gv_fake_camera->priv->camera, gvcp_inet_address);
+		if (g_strcmp0 (gv_fake_camera->priv->interface_name,
+			       arv_network_interface_get_name (iface_iter->data)) == 0) {
+			GSocketAddress *socket_address;
+			GInetAddress *inet_address;
+			GInetAddress *gvcp_inet_address;
+			unsigned int n_socket_fds;
+			unsigned int i;
+			socket_address = g_socket_address_new_from_native (arv_network_interface_get_addr(iface_iter->data),
+									   sizeof (struct sockaddr));
+			gvcp_inet_address = g_object_ref (g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_address)));
+			g_clear_object (&socket_address);
+			arv_fake_camera_set_inet_address (gv_fake_camera->priv->camera, gvcp_inet_address);
 
-		success = success && _create_and_bind_input_socket (&gv_fake_camera->priv->gvsp_socket,
-								    "GVSP", gvcp_inet_address, 0, FALSE, FALSE);
-		success = success && _create_and_bind_input_socket
-			(&gv_fake_camera->priv->input_sockets[ARV_GV_FAKE_CAMERA_INPUT_SOCKET_GVCP],
-			 "GVCP", gvcp_inet_address, ARV_GVCP_PORT, FALSE, FALSE);
-
-		inet_address = g_inet_address_new_from_string ("255.255.255.255");
-		if (!g_inet_address_equal (gvcp_inet_address, inet_address))
+			success = success && _create_and_bind_input_socket (&gv_fake_camera->priv->gvsp_socket,
+									    "GVSP", gvcp_inet_address, 0, FALSE, TRUE);
 			success = success && _create_and_bind_input_socket
-				(&gv_fake_camera->priv->input_sockets[ARV_GV_FAKE_CAMERA_INPUT_SOCKET_GLOBAL_DISCOVERY],
-				 "Global discovery", inet_address, ARV_GVCP_PORT, TRUE, FALSE);
-		g_clear_object (&inet_address);
-		socket_address = g_socket_address_new_from_native (arv_network_interface_get_broadaddr(iface_iter->data),
-								   sizeof (struct sockaddr));
-		inet_address = g_object_ref (g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_address)));
-		g_clear_object (&socket_address);
-		if (!g_inet_address_equal (gvcp_inet_address, inet_address))
-			success = success && _create_and_bind_input_socket
-				(&gv_fake_camera->priv->input_sockets[ARV_GV_FAKE_CAMERA_INPUT_SOCKET_SUBNET_DISCOVERY],
-				 "Subnet discovery", inet_address, ARV_GVCP_PORT, FALSE, FALSE);
-		g_clear_object (&inet_address);
+				(&gv_fake_camera->priv->input_sockets[ARV_GV_FAKE_CAMERA_INPUT_SOCKET_GVCP],
+				 "GVCP", gvcp_inet_address, ARV_GVCP_PORT, FALSE, FALSE);
 
-		g_clear_object (&gvcp_inet_address);
+			inet_address = g_inet_address_new_from_string ("255.255.255.255");
+			if (!g_inet_address_equal (gvcp_inet_address, inet_address))
+				success = success && _create_and_bind_input_socket
+					(&gv_fake_camera->priv->input_sockets[ARV_GV_FAKE_CAMERA_INPUT_SOCKET_GLOBAL_DISCOVERY],
+					 "Global discovery", inet_address, ARV_GVCP_PORT, TRUE, FALSE);
+			g_clear_object (&inet_address);
+			socket_address = g_socket_address_new_from_native (arv_network_interface_get_broadaddr(iface_iter->data),
+									   sizeof (struct sockaddr));
+			inet_address = g_object_ref (g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_address)));
+			g_clear_object (&socket_address);
+			if (!g_inet_address_equal (gvcp_inet_address, inet_address))
+				success = success && _create_and_bind_input_socket
+					(&gv_fake_camera->priv->input_sockets[ARV_GV_FAKE_CAMERA_INPUT_SOCKET_SUBNET_DISCOVERY],
+					 "Subnet discovery", inet_address, ARV_GVCP_PORT, FALSE, FALSE);
+			g_clear_object (&inet_address);
 
-		n_socket_fds = 0;
-		if (success) {
-			for (i = 0; i < ARV_GV_FAKE_CAMERA_N_INPUT_SOCKETS; i++) {
-				GSocket *socket = gv_fake_camera->priv->input_sockets[i];
+			g_clear_object (&gvcp_inet_address);
 
-				if (G_IS_SOCKET (socket)) {
-					gv_fake_camera->priv->socket_fds[n_socket_fds].fd = g_socket_get_fd (socket);
-					gv_fake_camera->priv->socket_fds[n_socket_fds].events = G_IO_IN;
-					gv_fake_camera->priv->socket_fds[n_socket_fds].revents = 0;
+			n_socket_fds = 0;
+			if (success) {
+				for (i = 0; i < ARV_GV_FAKE_CAMERA_N_INPUT_SOCKETS; i++) {
+					GSocket *socket = gv_fake_camera->priv->input_sockets[i];
 
-					n_socket_fds++;
+					if (G_IS_SOCKET (socket)) {
+						gv_fake_camera->priv->socket_fds[n_socket_fds].fd = g_socket_get_fd (socket);
+						gv_fake_camera->priv->socket_fds[n_socket_fds].events = G_IO_IN;
+						gv_fake_camera->priv->socket_fds[n_socket_fds].revents = 0;
+
+						n_socket_fds++;
+					}
 				}
+
+				arv_info_device ("Listening to %d sockets", n_socket_fds);
 			}
 
-			arv_debug_device ("Listening to %d sockets", n_socket_fds);
+			gv_fake_camera->priv->n_socket_fds = n_socket_fds;
+
+			arv_gpollfd_prepare_all (gv_fake_camera->priv->socket_fds, n_socket_fds);
+
+			interface_found = TRUE;
 		}
-
-		gv_fake_camera->priv->n_socket_fds = n_socket_fds;
-
-		interface_found = TRUE;
 	}
 	g_list_free_full (ifaces, (GDestroyNotify) arv_network_interface_free);
 
@@ -580,8 +589,11 @@ arv_gv_fake_camera_stop (ArvGvFakeCamera *gv_fake_camera)
 	g_thread_join (gv_fake_camera->priv->thread);
 	gv_fake_camera->priv->thread = NULL;
 
-	for (i = 0; i < ARV_GV_FAKE_CAMERA_N_INPUT_SOCKETS; i++)
+	arv_gpollfd_finish_all (gv_fake_camera->priv->socket_fds, gv_fake_camera->priv->n_socket_fds);
+
+	for (i = 0; i < ARV_GV_FAKE_CAMERA_N_INPUT_SOCKETS; i++) {
 		g_clear_object (&gv_fake_camera->priv->input_sockets[i]);
+	}
 	g_clear_object (&gv_fake_camera->priv->gvsp_socket);
 
 	g_clear_object (&gv_fake_camera->priv->controller_address);

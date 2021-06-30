@@ -17,7 +17,8 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Authors: Emmanuel Pacaud <emmanuel@gnome.org>
+ *          Václav Šmilauer <eu@doxos.eu>
  */
 
 #ifndef ARV_NETWORK_PRIVATE_H
@@ -33,6 +34,7 @@
 #endif
 
 #include <gio/gnetworking.h>
+#include <gio/gio.h>
 
 #if !defined(__APPLE__) && !defined(G_OS_WIN32)
 #include <linux/ip.h>
@@ -93,10 +95,17 @@ const char *		arv_network_interface_get_name		(ArvNetworkInterface *a);
 gboolean 		arv_socket_set_recv_buffer_size		(int socket_fd, gint buffer_size);
 
 #ifdef G_OS_WIN32
-	/* mingw only defines with _WIN32_WINNT>=0x0600, see https://github.com/AravisProject/aravis/issues/416#issuecomment-717220610 */
+	/* mingw only defines with _WIN32_WINNT>=0x0600, see
+	 * https://github.com/AravisProject/aravis/issues/416#issuecomment-717220610 */
 	#if _WIN32_WINNT < 0x0600
 		const char * inet_ntop (int af, const void *src, char *dst, socklen_t cnt);
 	#endif
 #endif
+
+/* Workaround for broken socket g_poll under Windows, otherwise no-op */
+
+void			arv_gpollfd_prepare_all			(GPollFD *fds, guint nfds);
+void			arv_gpollfd_clear_one			(GPollFD *fd, GSocket* socket);
+void 			arv_gpollfd_finish_all			(GPollFD *fds, guint nfds);
 
 #endif

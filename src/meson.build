@@ -32,6 +32,7 @@ library_sources = [
 	'arvgcfloatnode.c',
 	'arvgcregisternode.c',
 	'arvgcintregnode.c',
+	'arvgcstringnode.c',
 	'arvgcmaskedintregnode.c',
 	'arvgcfloatregnode.c',
 	'arvgcstringregnode.c',
@@ -132,6 +133,7 @@ library_headers = [
 	'arvgcregister.h',
 	'arvgcregisternode.h',
 	'arvgcintregnode.h',
+	'arvgcstringnode.h',
 	'arvgcmaskedintregnode.h',
 	'arvgcfloatregnode.h',
 	'arvgcstringregnode.h',
@@ -264,8 +266,11 @@ pkg.generate (aravis_library,
 	      description: 'Camera control and image acquisition library',
 	      requires: aravis_public_dependencies)
 
-progs = [[ 'arv-tool', 			'arvtool.c'],
-	 [ 'arv-fake-gv-camera', 	'arvfakegvcamera.c']]
+progs = [
+  [ 'arv-tool', 		'arvtool.c'],
+  [ 'arv-camera-test',		'arvcameratest.c'],
+  [ 'arv-fake-gv-camera', 	'arvfakegvcamera.c'],
+]
 
 foreach p: progs
 	executable ((p[0] + '-@0@').format (aravis_api_version),

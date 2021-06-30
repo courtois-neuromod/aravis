@@ -40,6 +40,7 @@
 static gboolean has_autovideo_sink = FALSE;
 static gboolean has_gtksink = FALSE;
 static gboolean has_gtkglsink = FALSE;
+static gboolean has_bayer2rgb = FALSE;
 
 static gboolean
 gstreamer_plugin_check (void)
@@ -56,8 +57,7 @@ gstreamer_plugin_check (void)
 		static char *plugins[] = {
 			"appsrc",
 			"videoconvert",
-			"videoflip",
-			"bayer2rgb"
+			"videoflip"
 		};
 
 		registry = gst_registry_get ();
@@ -88,6 +88,12 @@ gstreamer_plugin_check (void)
 		feature = gst_registry_lookup_feature (registry, "gtkglsink");
 		if (GST_IS_PLUGIN_FEATURE (feature)) {
 			has_gtkglsink = TRUE;
+			g_object_unref (feature);
+		}
+
+		feature = gst_registry_lookup_feature (registry, "bayer2rgb");
+		if (GST_IS_PLUGIN_FEATURE (feature)) {
+			has_bayer2rgb = TRUE;
 			g_object_unref (feature);
 		}
 
@@ -198,7 +204,8 @@ struct  _ArvViewer {
 	gboolean packet_resend;
 	guint packet_timeout;
 	guint frame_retention;
-	ArvRegisterCachePolicy cache_policy;
+	ArvRegisterCachePolicy register_cache_policy;
+	ArvRangeCheckPolicy range_check_policy;
 
 	gulong video_window_xid;
 };
@@ -220,7 +227,8 @@ arv_viewer_set_options (ArvViewer *viewer,
 			gboolean packet_resend,
 			guint packet_timeout,
 			guint frame_retention,
-			ArvRegisterCachePolicy cache_policy)
+			ArvRegisterCachePolicy register_cache_policy,
+			ArvRangeCheckPolicy range_check_policy)
 {
 	g_return_if_fail (viewer != NULL);
 
@@ -228,7 +236,8 @@ arv_viewer_set_options (ArvViewer *viewer,
 	viewer->packet_resend = packet_resend;
 	viewer->packet_timeout = packet_timeout;
 	viewer->frame_retention = frame_retention;
-	viewer->cache_policy = cache_policy;
+	viewer->register_cache_policy = register_cache_policy;
+	viewer->range_check_policy = range_check_policy;
 }
 
 static double
@@ -276,12 +285,12 @@ gst_buffer_release_cb (void *user_data)
 		gint n_input_buffers, n_output_buffers;
 
 		arv_stream_get_n_buffers (stream, &n_input_buffers, &n_output_buffers);
-		arv_log_viewer ("push buffer (%d,%d)", n_input_buffers, n_output_buffers);
+		arv_debug_viewer ("push buffer (%d,%d)", n_input_buffers, n_output_buffers);
 
 		arv_stream_push_buffer (stream, release_data->arv_buffer);
 		g_object_unref (stream);
 	} else {
-		arv_debug_viewer ("invalid stream object");
+		arv_info_viewer ("invalid stream object");
 		g_object_unref (release_data->arv_buffer);
 	}
 
@@ -345,7 +354,7 @@ new_buffer_cb (ArvStream *stream, ArvViewer *viewer)
 		return;
 
 	arv_stream_get_n_buffers (stream, &n_input_buffers, &n_output_buffers);
-	arv_log_viewer ("pop buffer (%d,%d)", n_input_buffers, n_output_buffers);
+	arv_debug_viewer ("pop buffer (%d,%d)", n_input_buffers, n_output_buffers);
 
 	if (arv_buffer_get_status (arv_buffer) == ARV_BUFFER_STATUS_SUCCESS) {
 		size_t size;
@@ -360,14 +369,14 @@ new_buffer_cb (ArvStream *stream, ArvViewer *viewer)
 		viewer->n_images++;
 		viewer->n_bytes += size;
 	} else {
-		arv_log_viewer ("push discarded buffer");
+		arv_debug_viewer ("push discarded buffer");
 		arv_stream_push_buffer (stream, arv_buffer);
 		viewer->n_errors++;
 	}
 }
 
 static void
-frame_rate_entry_cb (GtkEntry *entry, ArvViewer *viewer)
+_apply_frame_rate (GtkEntry *entry, ArvViewer *viewer, gboolean grab_focus)
 {
 	char *text;
 	double frame_rate;
@@ -379,14 +388,22 @@ frame_rate_entry_cb (GtkEntry *entry, ArvViewer *viewer)
 	frame_rate = arv_camera_get_frame_rate (viewer->camera, NULL);
 	text = g_strdup_printf ("%g", frame_rate);
 	gtk_entry_set_text (entry, text);
+	if (grab_focus)
+		gtk_widget_grab_focus (GTK_WIDGET(entry));
 	g_free (text);
+}
+
+static void
+frame_rate_entry_cb (GtkEntry *entry, ArvViewer *viewer)
+{
+	_apply_frame_rate (entry, viewer, TRUE);
 }
 
 static gboolean
 frame_rate_entry_focus_cb (GtkEntry *entry, GdkEventFocus *event,
 		    ArvViewer *viewer)
 {
-	frame_rate_entry_cb (entry, viewer);
+	_apply_frame_rate (entry, viewer, FALSE);
 
 	return FALSE;
 }
@@ -403,6 +420,7 @@ exposure_spin_cb (GtkSpinButton *spin_button, ArvViewer *viewer)
 
 	g_signal_handler_block (viewer->exposure_hscale, viewer->exposure_hscale_changed);
 	gtk_range_set_value (GTK_RANGE (viewer->exposure_hscale), log_exposure);
+	gtk_widget_grab_focus (GTK_WIDGET (spin_button));
 	g_signal_handler_unblock (viewer->exposure_hscale, viewer->exposure_hscale_changed);
 }
 
@@ -415,6 +433,7 @@ gain_spin_cb (GtkSpinButton *spin_button, ArvViewer *viewer)
 
 	g_signal_handler_block (viewer->gain_hscale, viewer->gain_hscale_changed);
 	gtk_range_set_value (GTK_RANGE (viewer->gain_hscale), gtk_spin_button_get_value (spin_button));
+	gtk_widget_grab_focus (GTK_WIDGET (spin_button));
 	g_signal_handler_unblock (viewer->gain_hscale, viewer->gain_hscale_changed);
 }
 
@@ -632,7 +651,7 @@ snapshot_cb (GtkButton *button, ArvViewer *viewer)
 	date_string = g_date_time_format (date, "%Y-%m-%d-%H:%M:%S");
 	filename = g_strdup_printf ("%s-%s-%d-%d-%s-%s.raw",
 				    arv_camera_get_vendor_name (viewer->camera, NULL),
-				    arv_camera_get_device_id (viewer->camera, NULL),
+				    arv_camera_get_device_serial_number (viewer->camera, NULL),
 				    width,
 				    height,
 				    pixel_format != NULL ? pixel_format : "Unknown",
@@ -699,7 +718,7 @@ stream_cb (void *user_data, ArvStreamCallbackType type, ArvBuffer *buffer)
 	if (type == ARV_STREAM_CALLBACK_TYPE_INIT) {
 		if (!arv_make_thread_realtime (10) &&
 		    !arv_make_thread_high_priority (-10))
-			g_warning ("Failed to make stream thread high priority");
+			arv_warning_viewer ("Failed to make stream thread high priority");
 	}
 }
 
@@ -979,14 +998,15 @@ start_video (ArvViewer *viewer)
 
 	arv_stream_set_emit_signals (viewer->stream, TRUE);
 	payload = arv_camera_get_payload (viewer->camera, NULL);
-	for (i = 0; i < 5; i++)
+	for (i = 0; i < 10; i++)
 		arv_stream_push_buffer (viewer->stream, arv_buffer_new (payload, NULL));
 
 	set_camera_widgets(viewer);
 	pixel_format = arv_camera_get_pixel_format (viewer->camera, NULL);
 
 	caps_string = arv_pixel_format_to_gst_caps_string (pixel_format);
-	if (caps_string == NULL) {
+	if (caps_string == NULL ||
+	    (g_str_has_prefix (caps_string, "video/x-bayer") && !has_bayer2rgb)) {
 		g_message ("GStreamer cannot understand the camera pixel format: 0x%x!\n", (int) pixel_format);
 		stop_video (viewer);
 		return FALSE;
@@ -1132,7 +1152,10 @@ start_camera (ArvViewer *viewer, const char *camera_id)
 	if (!ARV_IS_CAMERA (viewer->camera))
 		return FALSE;
 
-	arv_device_set_register_cache_policy (arv_camera_get_device (viewer->camera), viewer->cache_policy);
+	arv_device_set_register_cache_policy (arv_camera_get_device (viewer->camera),
+					      viewer->register_cache_policy);
+	arv_device_set_range_check_policy (arv_camera_get_device (viewer->camera),
+					   viewer->range_check_policy);
 
 	viewer->camera_name = g_strdup (camera_id);
 
@@ -1152,7 +1175,9 @@ start_camera (ArvViewer *viewer, const char *camera_id)
 	g_assert (n_pixel_formats == n_pixel_format_strings);
 	pixel_format_string = arv_camera_get_pixel_format_as_string (viewer->camera, NULL);
 	for (i = 0; i < n_pixel_formats; i++) {
-		if (arv_pixel_format_to_gst_caps_string (pixel_formats[i]) != NULL) {
+		const char *caps_string = arv_pixel_format_to_gst_caps_string (pixel_formats[i]);
+		if ( caps_string != NULL &&
+		    (has_bayer2rgb || !g_str_has_prefix (caps_string, "video/x-bayer"))) {
 			gtk_list_store_append (list_store, &iter);
 			gtk_list_store_set (list_store, &iter, 0, pixel_format_strings[i], -1);
 			if (g_strcmp0 (pixel_format_strings[i], pixel_format_string) == 0)
@@ -1263,7 +1288,7 @@ video_frame_realize_cb (GtkWidget * widget, ArvViewer *viewer)
 	viewer->video_window_xid = GDK_WINDOW_XID (gtk_widget_get_window (widget));
 #endif
 #ifdef GDK_WINDOWING_WIN32
-	viewer->video_window_xid = (guintptr) GDK_WINDOW_HWND (gtk_widget_get_window (video_window));
+	viewer->video_window_xid = (guintptr) GDK_WINDOW_HWND (gtk_widget_get_window (widget));
 #endif
 }
 
@@ -1373,7 +1398,7 @@ startup (GApplication *application)
 }
 
 static void
-shutdown (GApplication *application)
+viewer_shutdown (GApplication *application)
 {
 	G_APPLICATION_CLASS (arv_viewer_parent_class)->shutdown (application);
 
@@ -1418,7 +1443,8 @@ arv_viewer_init (ArvViewer *viewer)
 	viewer->packet_resend = TRUE;
 	viewer->packet_timeout = 20;
 	viewer->frame_retention = 100;
-	viewer->cache_policy = ARV_REGISTER_CACHE_POLICY_DEFAULT;
+	viewer->register_cache_policy = ARV_REGISTER_CACHE_POLICY_DEFAULT;
+	viewer->range_check_policy = ARV_RANGE_CHECK_POLICY_DEFAULT;
 }
 
 static void
@@ -1430,6 +1456,6 @@ arv_viewer_class_init (ArvViewerClass *class)
   object_class->finalize = finalize;
 
   application_class->startup = startup;
-  application_class->shutdown = shutdown;
+  application_class->shutdown = viewer_shutdown;
   application_class->activate = activate;
 }
