@@ -507,6 +507,83 @@ static struct {
    {128,     0,   0},
   };
 
+double x_pos, y_pos, pupil = 30, x_speed=0, y_speed=0, pupil_speed=0, x_acc=0, y_acc=0, pupil_acc=0;
+
+
+	static void
+	arv_fake_camera_moving_circle (ArvBuffer *buffer, void *fill_pattern_data,
+				       guint32 exposure_time_us,
+				       guint32 gain,
+				       ArvPixelFormat pixel_format)
+	{
+		unsigned char pixel_value;
+		double sq_dist;
+		guint32 x, y;
+		guint32 width;
+		guint32 height;
+
+		if (buffer == NULL)
+			return;
+
+
+		width = buffer->priv->width;
+		height = buffer->priv->height;
+
+		if (x_pos == 0 && y_pos == 0){
+			x_pos = width / 2;
+			y_pos = height / 2;
+		}
+
+		if (buffer->priv->frame_id % 500 == 0){
+			x_acc = (g_random_double()-x_pos/width)*.001;
+			y_acc = (g_random_double()-y_pos/height)*.001;
+			pupil_acc = (g_random_double()-pupil/20-.5)*.001;
+			x_speed /=2;
+			y_speed /=2;
+		}
+
+		x_speed += x_acc;
+		y_speed += y_acc;
+		pupil_speed += pupil_acc;
+
+		x_pos += x_speed;
+		y_pos += y_speed;
+		pupil += pupil_speed;
+
+		if(pupil<20){
+			pupil = 10;
+			pupil_speed = 0;
+			pupil_acc = .0001;
+		} else if (pupil > 50){
+			pupil = 50;
+			pupil_speed = 0;
+			pupil_acc = -.0001;
+		}
+		switch (pixel_format)
+		{
+			case ARV_PIXEL_FORMAT_MONO_8:
+				for (y = 0; y < height; y++)
+					for (x = 0; x < width; x++) {
+						unsigned char *pixel = &buffer->priv->data [y * width + x];
+						if (abs(x-x_pos)>50 || abs(y-y_pos)>50){
+							*pixel = 240;
+							continue;
+						}
+
+						sq_dist = ((x-x_pos)*(x-x_pos) + (y-y_pos)*(y-y_pos));
+						pixel_value = 0;
+						if (sq_dist > 2500)
+							pixel_value += 240;
+						else if (sq_dist > pupil*pupil)
+							pixel_value += 120;
+
+						*pixel = pixel_value;
+					}
+				break;
+
+			}
+	}
+
 static void
 arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 			       guint32 exposure_time_us,
@@ -724,7 +801,7 @@ arv_fake_camera_set_fill_pattern (ArvFakeCamera *camera,
 		camera->priv->fill_pattern_callback = fill_pattern_callback;
 		camera->priv->fill_pattern_data = fill_pattern_data;
 	} else {
-		camera->priv->fill_pattern_callback = arv_fake_camera_diagonal_ramp;
+		camera->priv->fill_pattern_callback = arv_fake_camera_moving_circle;
 		camera->priv->fill_pattern_data = NULL;
 	}
 
@@ -924,7 +1001,7 @@ arv_fake_camera_new_full (const char *serial_number, const char *genicam_filenam
 	memory = g_malloc0 (ARV_FAKE_CAMERA_MEMORY_SIZE);
 
 	g_mutex_init (&fake_camera->priv->fill_pattern_mutex);
-	fake_camera->priv->fill_pattern_callback = arv_fake_camera_diagonal_ramp;
+	fake_camera->priv->fill_pattern_callback = arv_fake_camera_moving_circle;
 	fake_camera->priv->fill_pattern_data = NULL;
 
 	if (genicam_filename != NULL)
@@ -1026,8 +1103,8 @@ arv_fake_camera_init (ArvFakeCamera *fake_camera)
 {
 	fake_camera->priv = arv_fake_camera_get_instance_private (fake_camera);
 
-	fake_camera->priv->trigger_frequency = 25.0;
-	fake_camera->priv->frame_id = 65400; /* Trigger circular counter bugs sooner */
+	fake_camera->priv->trigger_frequency = 250.0;
+	fake_camera->priv->frame_id = 0; /* Trigger circular counter bugs sooner */
 }
 
 static void

@@ -28,6 +28,7 @@
 #endif
 
 #include <arvbuffer.h>
+#include <arvrealtime.h>
 
 G_BEGIN_DECLS
 
@@ -47,6 +48,10 @@ typedef enum {
 	ARV_STREAM_CALLBACK_TYPE_START_BUFFER,
 	ARV_STREAM_CALLBACK_TYPE_BUFFER_DONE
 } ArvStreamCallbackType;
+
+void arv_cb_realtime_highpriority (void *user_data,
+							ArvStreamCallbackType type,
+							ArvBuffer *buffer);
 
 #define ARV_TYPE_STREAM             (arv_stream_get_type ())
 G_DECLARE_DERIVABLE_TYPE (ArvStream, arv_stream, ARV, STREAM, GObject)

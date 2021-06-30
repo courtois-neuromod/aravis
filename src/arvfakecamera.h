@@ -76,7 +76,7 @@ void arv_set_fake_camera_genicam_filename (const char *filename);
 #define ARV_FAKE_CAMERA_REGISTER_ACQUISITION		0x124
 #define ARV_FAKE_CAMERA_REGISTER_EXPOSURE_TIME_US	0x120
 
-#define ARV_FAKE_CAMERA_ACQUISITION_FRAME_RATE_DEFAULT	25.0
+#define ARV_FAKE_CAMERA_ACQUISITION_FRAME_RATE_DEFAULT	250.0
 #define ARV_FAKE_CAMERA_EXPOSURE_TIME_US_DEFAULT	10000.0
 
 /* Analog control */
@@ -123,4 +123,3 @@ const char *	arv_fake_camera_get_genicam_xml 	(ArvFakeCamera *camera, size_t *si
 G_END_DECLS
 
 #endif
-

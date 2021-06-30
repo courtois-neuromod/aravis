@@ -624,3 +624,15 @@ arv_stream_initable_iface_init (GInitableIface *iface)
 	iface->init = arv_stream_initable_init;
 }
 
+
+
+void arv_cb_realtime_highpriority (void *user_data,
+							ArvStreamCallbackType type,
+							ArvBuffer *buffer)
+{
+	if (type == ARV_STREAM_CALLBACK_TYPE_INIT) {
+		if (!arv_make_thread_realtime (10) &&
+		    !arv_make_thread_high_priority (-10))
+			g_warning ("Failed to make stream thread high priority");
+	}
+}
