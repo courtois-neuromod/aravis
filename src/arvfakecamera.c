@@ -37,7 +37,7 @@
 #include <arvgvcpprivate.h>
 #include <arvbufferprivate.h>
 #include <arvdebug.h>
-#include <arvmisc.h>
+#include <arvmiscprivate.h>
 #include <string.h>
 #include <math.h>
 
@@ -1046,6 +1046,7 @@ arv_fake_camera_new_full (const char *serial_number, const char *genicam_filenam
 
 	strcpy (((char *) memory) + ARV_GVBS_MANUFACTURER_NAME_OFFSET, "Aravis");
 	strcpy (((char *) memory) + ARV_GVBS_MODEL_NAME_OFFSET, "Fake");
+	strcpy (((char *) memory) + ARV_GVBS_MANUFACTURER_INFO_OFFSET, "none");
 	strcpy (((char *) memory) + ARV_GVBS_DEVICE_VERSION_OFFSET, ARAVIS_VERSION);
 	strcpy (((char *) memory) + ARV_GVBS_SERIAL_NUMBER_OFFSET, serial_number);
 
@@ -1130,8 +1131,9 @@ arv_fake_camera_class_init (ArvFakeCameraClass *fake_camera_class)
 	object_class->finalize = arv_fake_camera_finalize;
 }
 
-static __attribute__((destructor)) void
-module_exit (void)
+ARV_DEFINE_DESTRUCTOR (arv_fake_camera_destructor)
+static void
+arv_fake_camera_destructor (void)
 {
 	arv_set_fake_camera_genicam_filename (NULL);
 }

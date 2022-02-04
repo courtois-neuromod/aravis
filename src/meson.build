@@ -166,6 +166,7 @@ library_private_headers = [
 	'arvfakedeviceprivate.h',
 	'arvfakeinterfaceprivate.h',
 	'arvfakestreamprivate.h',
+	'arvgcprivate.h',
 	'arvgcconverterprivate.h',
 	'arvgcdefaultsprivate.h',
 	'arvgcfeaturenodeprivate.h',
@@ -214,21 +215,33 @@ if usb_dep.found()
 		]
 endif
 
-library_enums = gnome.mkenums_simple ('arvenumtypes', sources: library_headers + library_no_introspection_headers)
+library_enums = gnome.mkenums_simple ('arvenumtypes', decorator: 'ARV_API', header_prefix: '#include <arvapi.h>',
+				      sources: library_headers + library_no_introspection_headers)
 library_private_enums = gnome.mkenums_simple ('arvenumtypesprivate', sources: library_private_headers)
 library_resources = gnome.compile_resources('arvresources','arvresources.xml')
 
-library_include_dir = join_paths (get_option ('includedir'), 'aravis-@0@'.format (aravis_api_version))
+library_include_dir = get_option ('includedir') / 'aravis-@0@'.format (aravis_api_version)
 
-library_config_data = configuration_data ()
-library_config_data.set10 ('ARAVIS_HAS_USB', usb_dep.found())
-library_config_data.set10 ('ARAVIS_HAS_PACKET_SOCKET', packet_socket_enabled)
-library_config_data.set10 ('ARAVIS_HAS_FAST_HEARTBEAT', get_option ('fast-heartbeat'))
+api_config_data = configuration_data ()
+api_config_data.set ('ARV_API', cc_export_define)
+configure_file (input: 'arvapi.h.in', output: 'arvapi.h',
+		configuration: api_config_data, install_dir: library_include_dir)
+
+features_library_config_data = configuration_data ()
+features_library_config_data.set10 ('ARAVIS_HAS_USB', usb_dep.found())
+features_library_config_data.set10 ('ARAVIS_HAS_PACKET_SOCKET', packet_socket_enabled)
+features_library_config_data.set10 ('ARAVIS_HAS_FAST_HEARTBEAT', get_option ('fast-heartbeat'))
 configure_file (input: 'arvfeatures.h.in', output: 'arvfeatures.h',
-		configuration: library_config_data, install_dir: library_include_dir)
+		configuration: features_library_config_data, install_dir: library_include_dir)
+
+params_library_config_data = configuration_data ()
+params_library_config_data.set ('ARV_GV_STREAM_NUM_BUFFERS', get_option ('gv-n-buffers'))
+configure_file (input: 'arvparamsprivate.h.in', output: 'arvparamsprivate.h',
+		configuration: params_library_config_data)
 
 version_config_data = configuration_data ()
 version_config_data.set ('ARAVIS_VERSION', aravis_version)
+version_config_data.set ('ARAVIS_API_VERSION', aravis_api_version)
 version_config_data.set ('ARAVIS_MAJOR_VERSION', aravis_major_version)
 version_config_data.set ('ARAVIS_MINOR_VERSION', aravis_minor_version)
 version_config_data.set ('ARAVIS_MICRO_VERSION', aravis_micro_version)
@@ -240,8 +253,7 @@ library_inc = include_directories ('.')
 install_headers (library_headers + library_no_introspection_headers, install_dir: library_include_dir)
 
 library_c_args = [
-	'-DARAVIS_COMPILATION',
-	'-DARAVIS_API_VERSION="@0@"'.format (aravis_api_version)
+	'-DARAVIS_COMPILATION'
 	]
 
 aravis_library = library ('aravis-@0@'.format (aravis_api_version),
@@ -266,8 +278,11 @@ pkg.generate (aravis_library,
 	      description: 'Camera control and image acquisition library',
 	      requires: aravis_public_dependencies)
 
+arv_test_resources = gnome.compile_resources('arvtestresources','arvtestresources.xml')
+
 progs = [
   [ 'arv-tool', 		'arvtool.c'],
+  [ 'arv-test', 		['arvtest.c'] + arv_test_resources],
   [ 'arv-camera-test',		'arvcameratest.c'],
   [ 'arv-fake-gv-camera', 	'arvfakegvcamera.c'],
 ]
@@ -288,13 +303,14 @@ if introspection_option.auto() or introspection_option.enabled()
   gi_dep = dependency('gobject-introspection-1.0', required: introspection_option)
 
   if gir_scanner.found() and gi_dep.found()
-    gnome.generate_gir(aravis_library,
+    aravis_gir = gnome.generate_gir(aravis_library,
       sources : [library_sources, library_headers, library_enums],
       nsversion : aravis_api_version,
       namespace : 'Aravis',
       symbol_prefix : 'arv_',
       identifier_prefix : 'Arv',
-      export_packages : 'aravis',
+      header: 'arv.h',
+      export_packages : 'aravis-@0@'.format(aravis_api_version),
       includes : ['GObject-2.0', 'Gio-2.0'],
       extra_args: '-DARAVIS_COMPILATION',
       install : true)

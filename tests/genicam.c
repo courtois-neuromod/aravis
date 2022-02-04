@@ -2,9 +2,8 @@
 #include <arv.h>
 #include <string.h>
 
-#define ARAVIS_COMPILATION
-#include "../src/arvbufferprivate.h"
-#include "../src/arvmiscprivate.h"
+#include <arvbufferprivate.h>
+#include <arvmiscprivate.h>
 
 typedef struct {
 	const char *name;
@@ -826,7 +825,13 @@ const struct {
 		0, 0 },
 	{ "file:///C|program%20files/aravis/genicam.xml?SchemaVersion=1.0.0",
 		"file", NULL, "/C|program%20files/aravis/genicam.xml", "SchemaVersion=1.0.0", NULL,
-		0, 0}
+		0, 0},
+        { "Local: guide_gige_test.zip; 00010000; 06c5",
+                "Local", NULL, "guide_gige_test.zip", NULL, NULL,
+                0x10000, 0x6c5},
+        { "Local:   guide_gige_test.zip;    00010000;    06c5",
+                "Local", NULL, "guide_gige_test.zip", NULL, NULL,
+                0x10000, 0x6c5}
 };
 
 static void
@@ -836,11 +841,11 @@ url_test (void)
 
 	for (i = 0; i < G_N_ELEMENTS (genicam_urls); i++) {
 		gboolean success;
-		g_autofree char *scheme;
-		g_autofree char *authority;
-		g_autofree char *path;
-		g_autofree char *query;
-		g_autofree char *fragment;
+		char *scheme = NULL;
+		char *authority = NULL;
+		char *path = NULL;
+		char *query = NULL;
+		char *fragment = NULL;
 		guint64 address;
 		guint64 size;
 
@@ -859,6 +864,12 @@ url_test (void)
 		success = arv_parse_genicam_url (genicam_urls[i].url, -1, NULL, NULL, NULL, NULL, NULL, NULL, NULL);
 
 		g_assert (success);
+
+		g_free (scheme);
+		g_free (authority);
+		g_free (path);
+		g_free (query);
+		g_free (fragment);
 	}
 }
 
@@ -883,10 +894,18 @@ mandatory_test (void)
 	g_object_unref (device);
 }
 
-typedef struct __attribute__((__packed__)) {
+#if defined (__GNUC__)
+#define ARV_PACK(_structure) _structure __attribute__((__packed__))
+#elif defined (_MSC_VER) && (_MSC_VER >= 1500)
+#define ARV_PACK(_structure) __pragma(pack(push, 1)) _structure __pragma(pack(pop))
+#else
+#error "Structure packing is not defined for this compiler!"
+#endif
+
+ARV_PACK(typedef struct {
 	guint32 id;
 	guint32 size;
-} ArvChunkInfos;
+}) ArvChunkInfos;
 
 static ArvBuffer *
 create_buffer_with_chunk_data (void)

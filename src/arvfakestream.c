@@ -44,9 +44,12 @@ typedef struct {
 
 	/* Statistics */
 
-	guint n_completed_buffers;
-	guint n_failures;
-	guint n_underruns;
+	guint64 n_completed_buffers;
+	guint64 n_failures;
+	guint64 n_underruns;
+
+        guint64 n_transferred_bytes;
+        guint64 n_ignored_bytes;
 } ArvFakeStreamThreadData;
 
 typedef struct {
@@ -87,6 +90,9 @@ arv_fake_stream_thread (void *data)
 						       NULL);
 
 			arv_fake_camera_fill_buffer (thread_data->fake_camera, buffer, NULL);
+
+                        thread_data->n_transferred_bytes += buffer->priv->size;
+
 			if (buffer->priv->status == ARV_BUFFER_STATUS_SUCCESS)
 				thread_data->n_completed_buffers++;
 			else
@@ -171,9 +177,9 @@ arv_fake_stream_constructed (GObject *object)
 	ArvFakeStream *fake_stream = ARV_FAKE_STREAM (object);
 	ArvFakeStreamPrivate *priv = arv_fake_stream_get_instance_private (fake_stream);
 	ArvFakeStreamThreadData *thread_data;
-	g_autoptr (ArvFakeDevice) fake_device = NULL;
+	ArvFakeDevice *fake_device = NULL;
 
-	thread_data = g_new (ArvFakeStreamThreadData, 1);
+	thread_data = g_new0 (ArvFakeStreamThreadData, 1);
 	thread_data->stream = stream;
 
 	g_object_get (object,
@@ -186,33 +192,27 @@ arv_fake_stream_constructed (GObject *object)
 
 	thread_data->cancel = FALSE;
 
-	thread_data->n_completed_buffers = 0;
-	thread_data->n_failures = 0;
-	thread_data->n_underruns = 0;
+        arv_stream_declare_info (ARV_STREAM (fake_stream), "n_completed_buffers",
+                                 G_TYPE_UINT64, &thread_data->n_completed_buffers);
+        arv_stream_declare_info (ARV_STREAM (fake_stream), "n_failures",
+                                 G_TYPE_UINT64, &thread_data->n_failures);
+        arv_stream_declare_info (ARV_STREAM (fake_stream), "n_underruns",
+                                 G_TYPE_UINT64, &thread_data->n_underruns);
+        arv_stream_declare_info (ARV_STREAM (fake_stream), "n_transferred_bytes",
+                                 G_TYPE_UINT64, &thread_data->n_transferred_bytes);
+        arv_stream_declare_info (ARV_STREAM (fake_stream), "n_ignored_bytes",
+                                 G_TYPE_UINT64, &thread_data->n_ignored_bytes);
 
 	priv->thread_data = thread_data;
 
 	arv_fake_stream_start_thread (ARV_STREAM (fake_stream));
+
+        G_OBJECT_CLASS (arv_fake_stream_parent_class)->constructed (object);
+
+        g_clear_object (&fake_device);
 }
 
 /* ArvStream implementation */
-
-static void
-arv_fake_stream_get_statistics (ArvStream *stream,
-				guint64 *n_completed_buffers,
-				guint64 *n_failures,
-				guint64 *n_underruns)
-{
-	ArvFakeStream *fake_stream = ARV_FAKE_STREAM (stream);
-	ArvFakeStreamPrivate *priv = arv_fake_stream_get_instance_private (fake_stream);
-	ArvFakeStreamThreadData *thread_data;
-
-	thread_data = priv->thread_data;
-
-	*n_completed_buffers = thread_data->n_completed_buffers;
-	*n_failures = thread_data->n_failures;
-	*n_underruns = thread_data->n_underruns;
-}
 
 static void
 arv_fake_stream_init (ArvFakeStream *fake_stream)
@@ -245,5 +245,4 @@ arv_fake_stream_class_init (ArvFakeStreamClass *fake_stream_class)
 
 	stream_class->start_thread = arv_fake_stream_start_thread;
 	stream_class->stop_thread = arv_fake_stream_stop_thread;
-	stream_class->get_statistics = arv_fake_stream_get_statistics;
 }

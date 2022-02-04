@@ -28,14 +28,15 @@
 #error "Only <arv.h> can be included directly."
 #endif
 
+#include <arvapi.h>
 #include <arvdomnodelist.h>
 
 G_BEGIN_DECLS
 
 #define ARV_TYPE_DOM_NODE_CHILD_LIST (arv_dom_node_child_list_get_type ())
-G_DECLARE_FINAL_TYPE (ArvDomNodeChildList, arv_dom_node_child_list, ARV, DOM_NODE_CHILD_LIST, ArvDomNodeList)
+ARV_API G_DECLARE_FINAL_TYPE (ArvDomNodeChildList, arv_dom_node_child_list, ARV, DOM_NODE_CHILD_LIST, ArvDomNodeList)
 
-ArvDomNodeList * 		arv_dom_node_child_list_new 		(ArvDomNode *parent_node);
+ARV_API ArvDomNodeList *		arv_dom_node_child_list_new		(ArvDomNode *parent_node);
 
 G_END_DECLS
 

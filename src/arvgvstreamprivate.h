@@ -23,15 +23,17 @@
 #ifndef ARV_GV_STREAM_PRIVATE_H
 #define ARV_GV_STREAM_PRIVATE_H
 
-#if !defined (ARV_H_INSIDE) && !defined (ARAVIS_COMPILATION)
-#error "Only <arv.h> can be included directly."
-#endif
-
 #include <arvgvstream.h>
 #include <arvstream.h>
 #include <gio/gio.h>
 
 G_BEGIN_DECLS
+
+#define ARV_GV_STREAM_POLL_TIMEOUT_US			1000000
+#define ARV_GV_STREAM_INITIAL_PACKET_TIMEOUT_US_DEFAULT	1000
+#define ARV_GV_STREAM_PACKET_TIMEOUT_US_DEFAULT		20000
+#define ARV_GV_STREAM_FRAME_RETENTION_US_DEFAULT	100000
+#define ARV_GV_STREAM_PACKET_REQUEST_RATIO_DEFAULT	0.25
 
 ArvStream * 	arv_gv_stream_new		(ArvGvDevice *gv_device, ArvStreamCallback callback, void *callback_data, GError **error);
 

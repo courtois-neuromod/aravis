@@ -2,6 +2,27 @@
 #include <arv.h>
 
 static void
+discovery_test (void)
+{
+        int n_devices;
+        int i;
+
+        n_devices = arv_get_n_devices ();
+
+        for (i = 0; i < n_devices; i++) {
+                if (g_strcmp0 (arv_get_device_vendor (i), "Aravis") == 0 &&
+                    g_strcmp0 (arv_get_device_model (i), "Fake") == 0 &&
+                    g_strcmp0 (arv_get_device_serial_nbr (i), "1") == 0 &&
+                    g_strcmp0 (arv_get_device_manufacturer_info (i), "none") == 0 &&
+                    g_strcmp0 (arv_get_device_id (i), "Fake_1") == 0 &&
+                    g_strcmp0 (arv_get_device_physical_id (i), "Fake_1") == 0)
+                        return;
+        }
+
+        g_assert_not_reached ();
+}
+
+static void
 trigger_registers_test (void)
 {
 	ArvDevice *device;
@@ -306,6 +327,9 @@ fake_stream_test (void)
 	gint n_output_buffers;
 	gint payload;
 	gint counter = 0;
+        guint n_infos;
+        const char *info_name;
+        GType info_type;
 
 	camera = arv_camera_new ("Fake_1", &error);
 	g_assert (ARV_IS_CAMERA (camera));
@@ -344,6 +368,36 @@ fake_stream_test (void)
 	arv_stream_get_n_buffers (stream, &n_input_buffers, &n_output_buffers);
 	g_assert_cmpint (n_input_buffers, ==, 0);
 	g_assert_cmpint (n_output_buffers, ==, 0);
+
+        n_infos = arv_stream_get_n_infos (stream);
+        g_assert_cmpint (n_infos, ==, 5);
+
+        info_name = arv_stream_get_info_name (stream, 0);
+        g_assert_cmpstr (info_name, ==, "n_completed_buffers");
+
+        info_name = arv_stream_get_info_name (stream, 1);
+        g_assert_cmpstr (info_name, ==, "n_failures");
+
+        info_name = arv_stream_get_info_name (stream, 2);
+        g_assert_cmpstr (info_name, ==, "n_underruns");
+
+        info_type = arv_stream_get_info_type (stream, 0);
+        g_assert_cmpint (info_type, ==, G_TYPE_UINT64);
+
+        info_type = arv_stream_get_info_type (stream, 1);
+        g_assert_cmpint (info_type, ==, G_TYPE_UINT64);
+
+        info_type = arv_stream_get_info_type (stream, 2);
+        g_assert_cmpint (info_type, ==, G_TYPE_UINT64);
+
+        g_assert_cmpint (n_completed_buffers, ==, arv_stream_get_info_uint64_by_name (stream, "n_completed_buffers"));
+        g_assert_cmpint (n_completed_buffers, ==, arv_stream_get_info_uint64 (stream, 0));
+
+        g_assert_cmpint (n_failures, ==, arv_stream_get_info_uint64_by_name (stream, "n_failures"));
+        g_assert_cmpint (n_failures, ==, arv_stream_get_info_uint64 (stream, 1));
+
+        g_assert_cmpint (n_underruns, ==, arv_stream_get_info_uint64_by_name (stream, "n_underruns"));
+        g_assert_cmpint (n_underruns, ==, arv_stream_get_info_uint64 (stream, 2));
 
 	g_clear_object (&buffer);
 	g_clear_object (&stream);
@@ -643,6 +697,7 @@ main (int argc, char *argv[])
 
 	arv_update_device_list ();
 
+	g_test_add_func ("/fake/discovery-test", discovery_test);
 	g_test_add_func ("/fake/trigger-registers", trigger_registers_test);
 	g_test_add_func ("/fake/registers", registers_test);
 	g_test_add_func ("/fake/fake-device", fake_device_test);

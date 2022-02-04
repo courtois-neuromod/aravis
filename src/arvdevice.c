@@ -693,6 +693,43 @@ arv_device_get_float_feature_bounds (ArvDevice *device, const char *feature, dou
 }
 
 /**
+ * arv_device_get_float_feature_increment:
+ * @device: a #ArvDevice
+ * @feature: feature name
+ * @error: a #GError placeholder
+ *
+ * Not all float features have evenly distributed allowed values, which means the returned increment may not reflect the allowed value
+ * set.
+ *
+ * Returns: feature value increment, or #G_MINDOUBLE on error.
+ *
+ * Since: 0.8.16
+ */
+
+double
+arv_device_get_float_feature_increment (ArvDevice *device, const char *feature, GError **error)
+{
+	ArvGcNode *node;
+
+	node = _get_feature (device, ARV_TYPE_GC_FLOAT, feature, error);
+	if (node != NULL) {
+		GError *local_error = NULL;
+		double increment;
+
+		increment = arv_gc_float_get_inc (ARV_GC_FLOAT (node), &local_error);
+
+			if (local_error != NULL) {
+				g_propagate_error (error, local_error);
+				return G_MINDOUBLE;
+			}
+
+			return increment;
+	}
+
+	return G_MINDOUBLE;
+}
+
+/**
  * arv_device_dup_available_enumeration_feature_values:
  * @device: an #ArvDevice
  * @feature: feature name
@@ -783,6 +820,50 @@ arv_device_dup_available_enumeration_feature_values_as_display_names (ArvDevice 
 }
 
 /**
+ * arv_device_is_enumeration_entry_available:
+ * @device: an #ArvDevice instance
+ * @feature: enumeration feature name
+ * @entry: entry name
+ * @error: a #GError placeholder
+ *
+ * Returns: %TRUE if the feature and the feature entry are available
+ *
+ * Since: 0.8.17
+ */
+
+gboolean
+arv_device_is_enumeration_entry_available (ArvDevice *device, const char *feature, const char *entry, GError **error)
+{
+        GError *local_error = NULL;
+        const char **entries = NULL;
+        guint n_entries = 0;
+        gboolean is_available = FALSE;
+        unsigned int i;
+
+        if (!arv_device_is_feature_available (device, feature, &local_error)) {
+                if (local_error != NULL)
+                        g_propagate_error (error, local_error);
+                return FALSE;
+        }
+
+        entries = arv_device_dup_available_enumeration_feature_values_as_strings (device, feature, &n_entries,
+                                                                                  &local_error);
+
+        if (local_error != NULL) {
+                g_propagate_error (error, local_error);
+                return FALSE;
+        }
+
+        for (i = 0; i < n_entries && !is_available; i++) {
+                if (g_strcmp0 (entry, entries[i]) == 0)
+                        is_available = TRUE;
+        }
+        g_free (entries);
+
+        return is_available;
+}
+
+/**
  * arv_device_set_features_from_string:
  * @device: a #ArvDevice
  * @string: a space separated list of features assignments
@@ -821,10 +902,14 @@ arv_device_set_features_from_string (ArvDevice *device, const char *string, GErr
 
 			feature = arv_device_get_feature (device, key);
 			if (ARV_IS_GC_FEATURE_NODE (feature)) {
-				if (value != NULL)
-					arv_gc_feature_node_set_value_from_string (ARV_GC_FEATURE_NODE (feature), value, &local_error);
-				else
+				if (ARV_IS_GC_COMMAND (feature)) {
 					arv_device_execute_command (device, key, &local_error);
+				} else if (value != NULL) {
+					arv_gc_feature_node_set_value_from_string (ARV_GC_FEATURE_NODE (feature), value, &local_error);
+				} else {
+					g_set_error (&local_error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+						     "feature node '%s' requires a parameter value to set", key);
+				}
 			} else
 				g_set_error (&local_error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_FEATURE_NOT_FOUND,
 					     "node '%s' not found", key);

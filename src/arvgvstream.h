@@ -27,6 +27,7 @@
 #error "Only <arv.h> can be included directly."
 #endif
 
+#include <arvapi.h>
 #include <arvtypes.h>
 #include <arvstream.h>
 
@@ -46,7 +47,7 @@ typedef enum {
 /**
  * ArvGvStreamSocketBuffer:
  * @ARV_GV_STREAM_SOCKET_BUFFER_FIXED: socket buffer is set to a given fixed value
- * @ARV_GV_STREAM_SOCKET_BUFFER_AUTO: sockect buffer is set with respect to the payload size
+ * @ARV_GV_STREAM_SOCKET_BUFFER_AUTO: socket buffer size is set to the payload size
  */
 
 typedef enum {
@@ -66,10 +67,10 @@ typedef enum {
 } ArvGvStreamPacketResend;
 
 #define ARV_TYPE_GV_STREAM             (arv_gv_stream_get_type ())
-G_DECLARE_FINAL_TYPE (ArvGvStream, arv_gv_stream, ARV, GV_STREAM, ArvStream)
+ARV_API G_DECLARE_FINAL_TYPE (ArvGvStream, arv_gv_stream, ARV, GV_STREAM, ArvStream)
 
-guint16 	arv_gv_stream_get_port 			(ArvGvStream *gv_stream);
-void		arv_gv_stream_get_statistics		(ArvGvStream *gv_stream,
+ARV_API guint16		arv_gv_stream_get_port		(ArvGvStream *gv_stream);
+ARV_API void		arv_gv_stream_get_statistics	(ArvGvStream *gv_stream,
 							 guint64 *n_resent_packets,
 							 guint64 *n_missing_packets);
 

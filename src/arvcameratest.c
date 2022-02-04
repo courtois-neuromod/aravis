@@ -1,4 +1,5 @@
 #include <arvdebugprivate.h>
+#include <arvgvstreamprivate.h>
 #include <arv.h>
 #include <stdlib.h>
 #include <signal.h>
@@ -19,8 +20,9 @@ static gboolean arv_option_auto_socket_buffer = FALSE;
 static char *arv_option_packet_size_adjustment = NULL;
 static gboolean arv_option_no_packet_resend = FALSE;
 static double arv_option_packet_request_ratio = -1.0;
-static unsigned int arv_option_packet_timeout = 20;
-static unsigned int arv_option_frame_retention = 100;
+static unsigned int arv_option_initial_packet_timeout = ARV_GV_STREAM_INITIAL_PACKET_TIMEOUT_US_DEFAULT / 1000;
+static unsigned int arv_option_packet_timeout = ARV_GV_STREAM_PACKET_TIMEOUT_US_DEFAULT / 1000;
+static unsigned int arv_option_frame_retention = ARV_GV_STREAM_FRAME_RETENTION_US_DEFAULT / 1000;
 static int arv_option_gv_stream_channel = -1;
 static int arv_option_gv_packet_delay = -1;
 static int arv_option_gv_packet_size = -1;
@@ -31,6 +33,8 @@ static char *arv_option_chunks = NULL;
 static int arv_option_bandwidth_limit = -1;
 static char *arv_option_register_cache = NULL;
 static char *arv_option_range_check = NULL;
+static int arv_option_duration_s = -1;
+static char *arv_option_uv_usb_mode = NULL;
 
 /* clang-format off */
 static const GOptionEntry arv_option_entries[] =
@@ -38,52 +42,52 @@ static const GOptionEntry arv_option_entries[] =
 	{
 		"name",					'n', 0, G_OPTION_ARG_STRING,
 		&arv_option_camera_name,		"Camera name",
-		NULL
+		"<camera_id>"
 	},
 	{
 		"frequency", 				'f', 0, G_OPTION_ARG_DOUBLE,
 		&arv_option_frequency,			"Acquisition frequency",
-		NULL
+		"<Hz>"
 	},
 	{
 		"trigger",				't', 0, G_OPTION_ARG_STRING,
 		&arv_option_trigger,			"External trigger",
-		NULL
+		"<trigger_id>"
 	},
 	{
 		"software-trigger",			'o', 0, G_OPTION_ARG_DOUBLE,
 		&arv_option_software_trigger,		"Emit software trigger",
-		NULL
+		"<Hz>"
 	},
 	{
 		"width", 				'w', 0, G_OPTION_ARG_INT,
 		&arv_option_width,			"Width",
-		NULL
+		"<n_pixels>"
 	},
 	{
 		"height", 				'h', 0, G_OPTION_ARG_INT,
 		&arv_option_height, 			"Height",
-		NULL
+		"<n_pixels>"
 	},
 	{
 	       "h-binning", 				'\0', 0, G_OPTION_ARG_INT,
 		&arv_option_horizontal_binning,		"Horizontal binning",
-		NULL
+		"<n_pixels>"
 	},
 	{
 		"v-binning", 				'\0', 0, G_OPTION_ARG_INT,
 		&arv_option_vertical_binning, 		"Vertical binning",
-		NULL
+		"<n_pixels>"
 	},
 	{
 		"exposure", 				'e', 0, G_OPTION_ARG_DOUBLE,
-		&arv_option_exposure_time_us, 		"Exposure time (us)",
-		NULL
+		&arv_option_exposure_time_us, 		"Exposure time",
+		"<time_us>"
 	},
 	{
 		"gain", 				'g', 0, G_OPTION_ARG_INT,
 		&arv_option_gain,	 		"Gain (dB)",
-		NULL
+		"<dB>"
 	},
 	{
 		"auto",					'a', 0, G_OPTION_ARG_NONE,
@@ -103,38 +107,48 @@ static const GOptionEntry arv_option_entries[] =
 	{
 		"packet-request-ratio",			'q', 0, G_OPTION_ARG_DOUBLE,
 		&arv_option_packet_request_ratio,
-		"Packet resend request limit as a frame packet number ratio [0..2.0]",
-		NULL
+		"Packet resend request limit as a frame packet ratio",
+		"[0..2.0]"
+	},
+	{
+		"initial-packet-timeout", 		'l', 0, G_OPTION_ARG_INT,
+		&arv_option_initial_packet_timeout, 	"Initial packet timeout",
+		"<ms>"
 	},
 	{
 		"packet-timeout", 			'p', 0, G_OPTION_ARG_INT,
-		&arv_option_packet_timeout, 		"Packet timeout (ms)",
-		NULL
+		&arv_option_packet_timeout, 		"Packet timeout",
+		"<ms>"
 	},
 	{
 		"frame-retention", 			'm', 0, G_OPTION_ARG_INT,
-		&arv_option_frame_retention, 		"Frame retention (ms)",
-		NULL
+		&arv_option_frame_retention, 		"Frame retention",
+	        "<ms>"
 	},
 	{
 		"gv-stream-channel",			'c', 0, G_OPTION_ARG_INT,
 		&arv_option_gv_stream_channel,		"GigEVision stream channel id",
-		NULL
+		"<id>"
 	},
 	{
 		"gv-packet-delay",			'y', 0, G_OPTION_ARG_INT,
-		&arv_option_gv_packet_delay,		"GigEVision packet delay (ns)",
-		NULL
+		&arv_option_gv_packet_delay,		"GigEVision packet delay",
+		"<ns>"
 	},
 	{
 		"gv-packet-size",			'i', 0, G_OPTION_ARG_INT,
-		&arv_option_gv_packet_size,		"GigEVision packet size (bytes)",
-		NULL
+		&arv_option_gv_packet_size,		"GigEVision packet size",
+		"<n_bytes>"
+	},
+	{
+		"usb-mode",				's', 0, G_OPTION_ARG_STRING,
+		&arv_option_uv_usb_mode,		"USB device I/O mode",
+		"{sync|async}"
 	},
 	{
 		"chunks", 				'u', 0, G_OPTION_ARG_STRING,
 		&arv_option_chunks,	 		"Chunks",
-		NULL
+		"<chunk_id>[,<chunk_id>[...]]"
 	},
 	{
 		"realtime",				'\0', 0, G_OPTION_ARG_NONE,
@@ -167,6 +181,11 @@ static const GOptionEntry arv_option_entries[] =
 		NULL
 	},
 	{
+		"duration",	        		'\0', 0, G_OPTION_ARG_INT,
+		&arv_option_duration_s,		        "Test duration (s)",
+		NULL
+	},
+	{
 		"debug", 				'd', 0, G_OPTION_ARG_STRING,
 		&arv_option_debug_domains, 		NULL,
 		"{<category>[:<level>][,...]|help}"
@@ -184,6 +203,8 @@ typedef struct {
 
 	ArvChunkParser *chunk_parser;
 	char **chunks;
+
+        gint64 start_time;
 } ApplicationData;
 
 static gboolean cancel = FALSE;
@@ -270,7 +291,9 @@ periodic_task_cb (void *abstract_data)
 	data->error_count = 0;
 	data->transferred = 0;
 
-	if (cancel) {
+	if (cancel ||
+            (arv_option_duration_s > 0 &&
+             (g_get_monotonic_time() - data->start_time) > 1000000 * arv_option_duration_s)) {
 		g_main_loop_quit (data->main_loop);
 		return FALSE;
 	}
@@ -305,6 +328,7 @@ main (int argc, char **argv)
 	ArvRegisterCachePolicy register_cache_policy;
 	ArvRangeCheckPolicy range_check_policy;
 	ArvGvPacketSizeAdjustment adjustment;
+	ArvUvUsbMode usb_mode;
 	GOptionContext *context;
 	GError *error = NULL;
 	int i;
@@ -370,6 +394,17 @@ main (int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	if (arv_option_uv_usb_mode == NULL)
+		usb_mode = ARV_UV_USB_MODE_DEFAULT;
+	else if (g_strcmp0 (arv_option_uv_usb_mode, "sync") == 0)
+		usb_mode = ARV_UV_USB_MODE_SYNC;
+	else if (g_strcmp0 (arv_option_uv_usb_mode, "async") == 0)
+		usb_mode = ARV_UV_USB_MODE_ASYNC;
+	else {
+		printf ("Invalid USB device I/O mode\n");
+		return EXIT_FAILURE;
+	}
+
 	if (!arv_debug_enable (arv_option_debug_domains)) {
 		if (g_strcmp0 (arv_option_debug_domains, "help") != 0)
 			printf ("Invalid debug selection\n");
@@ -382,6 +417,11 @@ main (int argc, char **argv)
 
 	arv_debug_enable (arv_option_debug_domains);
 
+    #ifdef G_OS_WIN32
+        setbuf(stderr,NULL);
+        setbuf(stdout,NULL);
+    #endif
+
 	if (arv_option_camera_name == NULL)
 		g_print ("Looking for the first available camera\n");
 	else
@@ -389,21 +429,23 @@ main (int argc, char **argv)
 
 	camera = arv_camera_new (arv_option_camera_name, &error);
 	if (camera != NULL) {
-		const char *vendor_name;
-		const char *model_name;
-		const char *serial_number;
+		const char *vendor_name =NULL;
+		const char *model_name = NULL;
+		const char *serial_number = NULL;
 		void (*old_sigint_handler)(int);
 		gint payload = 0;
 		gint width, height;
 		gint dx, dy;
-		double exposure;
+		double exposure = 0;
 		guint64 n_completed_buffers;
 		guint64 n_failures;
 		guint64 n_underruns;
-		guint uv_bandwidth;
+		guint uv_bandwidth = 0;
 		guint min, max;
-		guint gv_n_channels, gv_channel_id, gv_packet_delay, gv_packet_size;
-		int gain;
+		guint gv_n_channels = 0;
+                guint gv_channel_id = 0;
+                guint gv_packet_delay = 0;
+		int gain = 0;
 		guint software_trigger_source = 0;
 		gboolean success = TRUE;
 
@@ -438,8 +480,11 @@ main (int argc, char **argv)
 		if (error == NULL) arv_camera_set_exposure_time (camera, arv_option_exposure_time_us, &error);
 		if (error == NULL) arv_camera_set_gain (camera, arv_option_gain, &error);
 
-		if (arv_camera_is_uv_device(camera) && arv_option_bandwidth_limit >= 0) {
-			if (error == NULL) arv_camera_uv_set_bandwidth (camera, arv_option_bandwidth_limit, &error);
+		if (arv_camera_is_uv_device (camera)) {
+			if (error == NULL)
+                                arv_camera_uv_set_usb_mode (camera, usb_mode);
+			if (error == NULL && arv_option_bandwidth_limit >= 0)
+                                        arv_camera_uv_set_bandwidth (camera, arv_option_bandwidth_limit, &error);
 		}
 
 		if (arv_camera_is_gv_device (camera)) {
@@ -485,7 +530,6 @@ main (int argc, char **argv)
 				if (error == NULL) gv_n_channels = arv_camera_gv_get_n_stream_channels (camera, &error);
 				if (error == NULL) gv_channel_id = arv_camera_gv_get_current_stream_channel (camera, &error);
 				if (error == NULL) gv_packet_delay = arv_camera_gv_get_packet_delay (camera, &error);
-				if (error == NULL) gv_packet_size = arv_camera_gv_get_packet_size (camera, &error);
 			}
 
 			if (error != NULL) {
@@ -497,36 +541,42 @@ main (int argc, char **argv)
 		}
 
 		if (success) {
-			printf ("vendor name           = %s\n", vendor_name);
-			printf ("model name            = %s\n", model_name);
-			printf ("device serial number  = %s\n", serial_number);
-			printf ("image width           = %d\n", width);
-			printf ("image height          = %d\n", height);
+			printf ("vendor name            = %s\n", vendor_name);
+			printf ("model name             = %s\n", model_name);
+			printf ("device serial number   = %s\n", serial_number);
+			printf ("image width            = %d\n", width);
+			printf ("image height           = %d\n", height);
 			if (arv_camera_is_binning_available (camera, NULL)) {
-				printf ("horizontal binning    = %d\n", dx);
-				printf ("vertical binning      = %d\n", dy);
+				printf ("horizontal binning     = %d\n", dx);
+				printf ("vertical binning       = %d\n", dy);
 			}
-			if (arv_camera_is_exposure_time_available (camera, NULL)) 
-				printf ("exposure              = %g µs\n", exposure);
+			if (arv_camera_is_exposure_time_available (camera, NULL))
+				printf ("exposure               = %g µs\n", exposure);
 			if (arv_camera_is_gain_available (camera, NULL))
-				printf ("gain                  = %d dB\n", gain);
-			printf ("payload               = %d bytes\n", payload);
+				printf ("gain                   = %d dB\n", gain);
+			printf ("payload                = %d bytes\n", payload);
 			if (arv_camera_is_uv_device (camera)) {
 				if (arv_camera_uv_is_bandwidth_control_available (camera, NULL)) {
-					printf ("uv bandwidth limit    = %d [%d..%d]\n", uv_bandwidth, min, max);
+					printf ("uv bandwidth limit     = %d [%d..%d]\n", uv_bandwidth, min, max);
 				}
 			}
 			if (arv_camera_is_gv_device (camera)) {
-				printf ("gv n_stream channels  = %d\n", gv_n_channels);
-				printf ("gv current channel    = %d\n", gv_channel_id);
-				printf ("gv packet delay       = %d ns\n", gv_packet_delay);
-				printf ("gv packet size        = %d bytes\n", gv_packet_size);
+				printf ("gv n_stream channels   = %d\n", gv_n_channels);
+				printf ("gv current channel     = %d\n", gv_channel_id);
+				printf ("gv packet delay        = %d ns\n", gv_packet_delay);
 			}
 
 		}
 
 		if (success) {
 		    stream = arv_camera_create_stream (camera, stream_cb, NULL, &error);
+
+                    if (arv_camera_is_gv_device (camera)) {
+                            guint gv_packet_size;
+
+                            gv_packet_size = arv_camera_gv_get_packet_size (camera, &error);
+                            printf ("gv packet size         = %d bytes\n", gv_packet_size);
+                    }
 
 		    if (ARV_IS_STREAM (stream)) {
 			    if (ARV_IS_GV_STREAM (stream)) {
@@ -545,6 +595,7 @@ main (int argc, char **argv)
 							  NULL);
 
 				    g_object_set (stream,
+						  "initial-packet-timeout", (unsigned) arv_option_initial_packet_timeout * 1000,
 						  "packet-timeout", (unsigned) arv_option_packet_timeout * 1000,
 						  "frame-retention", (unsigned) arv_option_frame_retention * 1000,
 						  NULL);
@@ -576,6 +627,8 @@ main (int argc, char **argv)
 			    g_signal_connect (arv_camera_get_device (camera), "control-lost",
 					      G_CALLBACK (control_lost_cb), NULL);
 
+                            data.start_time = g_get_monotonic_time();
+
 			    g_timeout_add (1000, periodic_task_cb, &data);
 
 			    data.main_loop = g_main_loop_new (NULL, FALSE);
@@ -593,9 +646,13 @@ main (int argc, char **argv)
 
 			    arv_stream_get_statistics (stream, &n_completed_buffers, &n_failures, &n_underruns);
 
-			    g_print ("Completed buffers = %" G_GUINT64_FORMAT "\n", n_completed_buffers);
-			    g_print ("Failures          = %" G_GUINT64_FORMAT "\n", n_failures);
-			    g_print ("Underruns         = %" G_GUINT64_FORMAT "\n", n_underruns);
+                            for (i = 0; i < arv_stream_get_n_infos (stream); i++) {
+                                    if (arv_stream_get_info_type (stream, i) == G_TYPE_UINT64) {
+                                            g_print ("%-22s = %" G_GUINT64_FORMAT "\n",
+                                                     arv_stream_get_info_name (stream, i),
+                                                     arv_stream_get_info_uint64 (stream, i));
+                                    }
+                            }
 
 			    arv_camera_stop_acquisition (camera, NULL);
 

@@ -37,11 +37,13 @@
 /* ArvUvInterface implementation */
 
 typedef struct {
+	char *id;
 	char *name;
 	char *full_name;
 	char *manufacturer;
 	char *product;
 	char *serial_nbr;
+	char *guid;
 
 	volatile gint ref_count;
 } ArvUvInterfaceDeviceInfos;
@@ -49,22 +51,27 @@ typedef struct {
 static ArvUvInterfaceDeviceInfos *
 arv_uv_interface_device_infos_new (const char *manufacturer,
 				   const char *product,
-				   const char *serial_nbr)
+				   const char *serial_nbr,
+				   const char *guid)
 {
 	ArvUvInterfaceDeviceInfos *infos;
 
 	g_return_val_if_fail (manufacturer != NULL, NULL);
 	g_return_val_if_fail (product != NULL, NULL);
 	g_return_val_if_fail (serial_nbr != NULL, NULL);
+	g_return_val_if_fail (guid != NULL, NULL);
 
 	infos = g_new (ArvUvInterfaceDeviceInfos, 1);
+	infos->id = g_strdup_printf ("%s-%s-%s", manufacturer, guid, serial_nbr);
 	infos->manufacturer = g_strdup (manufacturer);
 	infos->name = g_strdup_printf ("%s-%s", arv_vendor_alias_lookup (manufacturer), serial_nbr);
 	infos->full_name = g_strdup_printf ("%s-%s", manufacturer, serial_nbr);
 	infos->product = g_strdup (product);
 	infos->serial_nbr = g_strdup (serial_nbr);
+	infos->guid = g_strdup (guid);
 	infos->ref_count = 1;
 
+	arv_str_strip (infos->id, ARV_DEVICE_NAME_ILLEGAL_CHARACTERS, ARV_DEVICE_NAME_REPLACEMENT_CHARACTER);
 	arv_str_strip (infos->name, ARV_DEVICE_NAME_ILLEGAL_CHARACTERS, ARV_DEVICE_NAME_REPLACEMENT_CHARACTER);
 	arv_str_strip (infos->full_name, ARV_DEVICE_NAME_ILLEGAL_CHARACTERS, ARV_DEVICE_NAME_REPLACEMENT_CHARACTER);
 
@@ -89,11 +96,13 @@ arv_uv_interface_device_infos_unref (ArvUvInterfaceDeviceInfos *infos)
 	g_return_if_fail (g_atomic_int_get (&infos->ref_count) > 0);
 
 	if (g_atomic_int_dec_and_test (&infos->ref_count)) {
+		g_clear_pointer (&infos->id, g_free);
 		g_clear_pointer (&infos->name, g_free);
 		g_clear_pointer (&infos->full_name, g_free);
 		g_clear_pointer (&infos->manufacturer, g_free);
 		g_clear_pointer (&infos->product, g_free);
 		g_clear_pointer (&infos->serial_nbr, g_free);
+		g_clear_pointer (&infos->guid, g_free);
 		g_clear_pointer (&infos, g_free);
 	}
 }
@@ -163,6 +172,7 @@ _usb_device_to_device_ids (ArvUvInterface *uv_interface, libusb_device *device)
 	const struct libusb_interface_descriptor *interdesc;
 	gboolean control_protocol_found;
 	gboolean data_protocol_found;
+	int guid_index = -1;
 	int r, i, j;
 
 	r = libusb_get_device_descriptor (device, &desc);
@@ -185,8 +195,13 @@ _usb_device_to_device_ids (ArvUvInterface *uv_interface, libusb_device *device)
 			interdesc = &inter->altsetting[j];
 			if (interdesc->bInterfaceClass == ARV_UV_INTERFACE_INTERFACE_CLASS &&
 			    interdesc->bInterfaceSubClass == ARV_UV_INTERFACE_INTERFACE_SUBCLASS) {
-				if (interdesc->bInterfaceProtocol == ARV_UV_INTERFACE_CONTROL_PROTOCOL)
+				if (interdesc->bInterfaceProtocol == ARV_UV_INTERFACE_CONTROL_PROTOCOL) {
 					control_protocol_found = TRUE;
+					if (interdesc->extra &&
+					    interdesc->extra_length >= ARV_UV_INTERFACE_GUID_INDEX_OFFSET + sizeof(unsigned char)) {
+						guid_index = (int) (*(interdesc->extra + ARV_UV_INTERFACE_GUID_INDEX_OFFSET));
+					}
+				}
 				if (interdesc->bInterfaceProtocol == ARV_UV_INTERFACE_DATA_PROTOCOL)
 					data_protocol_found = TRUE;
 			}
@@ -202,6 +217,7 @@ _usb_device_to_device_ids (ArvUvInterface *uv_interface, libusb_device *device)
 		unsigned char *manufacturer;
 		unsigned char *product;
 		unsigned char *serial_nbr;
+		unsigned char *guid;
 		int index;
 
 		device_ids = g_new0 (ArvInterfaceDeviceIds, 1);
@@ -209,6 +225,7 @@ _usb_device_to_device_ids (ArvUvInterface *uv_interface, libusb_device *device)
 		manufacturer = g_malloc0 (256);
 		product = g_malloc0 (256);
 		serial_nbr = g_malloc0 (256);
+		guid = g_malloc0 (256);
 
 		index = desc.iManufacturer;
 		if (index > 0)
@@ -219,24 +236,34 @@ _usb_device_to_device_ids (ArvUvInterface *uv_interface, libusb_device *device)
 		index = desc.iSerialNumber;
 		if (index > 0)
 			libusb_get_string_descriptor_ascii (device_handle, index, serial_nbr, 256);
+		index = guid_index;
+		if (index > 0)
+			libusb_get_string_descriptor_ascii (device_handle, index, guid, 256);
 
-		device_infos = arv_uv_interface_device_infos_new ((char *) manufacturer, (char *) product, (char *) serial_nbr);
+		device_infos = arv_uv_interface_device_infos_new ((char *) manufacturer, (char *) product,
+                                                                  (char *) serial_nbr, (char *) guid);
+		g_hash_table_replace (uv_interface->priv->devices, device_infos->id,
+				      arv_uv_interface_device_infos_ref (device_infos));
 		g_hash_table_replace (uv_interface->priv->devices, device_infos->name,
 				      arv_uv_interface_device_infos_ref (device_infos));
 		g_hash_table_replace (uv_interface->priv->devices, device_infos->full_name,
 				      arv_uv_interface_device_infos_ref (device_infos));
+		g_hash_table_replace (uv_interface->priv->devices, device_infos->guid,
+				      arv_uv_interface_device_infos_ref (device_infos));
 		arv_uv_interface_device_infos_unref (device_infos);
 
-		device_ids->device = g_strdup (device_infos->name);
-		device_ids->physical = g_strdup ("USB3");	/* FIXME */
+		device_ids->device = g_strdup (device_infos->id);
+		device_ids->physical = g_strdup (device_infos->guid);
 		device_ids->address = g_strdup ("USB3");	/* FIXME */
 		device_ids->vendor = g_strdup (device_infos->manufacturer);
+                device_ids->manufacturer_info = g_strdup ("none");
 		device_ids->model = g_strdup (device_infos->product);
 		device_ids->serial_nbr = g_strdup (device_infos->serial_nbr);
 
 		g_free (manufacturer);
 		g_free (product);
 		g_free (serial_nbr);
+		g_free (guid);
 
 		libusb_close (device_handle);
 	} else
@@ -319,7 +346,7 @@ _open_device (ArvInterface *interface, const char *device_id, GError **error)
 	if (device_infos == NULL)
 		return NULL;
 
-	return arv_uv_device_new (device_infos->manufacturer, device_infos->product, device_infos->serial_nbr, error);
+	return arv_uv_device_new_from_guid (device_infos->guid, error);
 }
 
 static ArvDevice *

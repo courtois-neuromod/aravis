@@ -31,6 +31,7 @@
 #include <arvuvcpprivate.h>
 #include <arvgc.h>
 #include <arvdebug.h>
+#include <arvenumtypes.h>
 #include <libusb.h>
 #include <string.h>
 #include <arvstr.h>
@@ -42,7 +43,8 @@ enum
 	PROP_0,
 	PROP_UV_DEVICE_VENDOR,
 	PROP_UV_DEVICE_PRODUCT,
-	PROP_UV_DEVICE_SERIAL_NUMBER
+	PROP_UV_DEVICE_SERIAL_NUMBER,
+	PROP_UV_DEVICE_GUID
 };
 
 #define ARV_UV_DEVICE_N_TRIES_MAX	5
@@ -51,6 +53,7 @@ typedef struct {
 	char *vendor;
 	char *product;
 	char *serial_number;
+	char *guid;
 
 	libusb_context *usb;
 	libusb_device_handle *usb_device;
@@ -70,6 +73,11 @@ typedef struct {
         guint8 control_endpoint;
         guint8 data_endpoint;
 	gboolean disconnected;
+
+	ArvUvUsbMode usb_mode;
+
+	int event_thread_run;
+	GThread* event_thread;
 } ArvUvDevicePrivate;
 
 struct _ArvUvDevice {
@@ -85,6 +93,20 @@ G_DEFINE_TYPE_WITH_CODE (ArvUvDevice, arv_uv_device, ARV_TYPE_DEVICE, G_ADD_PRIV
 /* ArvDevice implementation */
 
 /* ArvUvDevice implementation */
+
+void arv_uv_device_fill_bulk_transfer (struct libusb_transfer* transfer, ArvUvDevice *uv_device,
+				ArvUvEndpointType endpoint_type, unsigned char endpoint_flags,
+				void *data, size_t size,
+				libusb_transfer_cb_fn callback, void* callback_data,
+				unsigned int timeout)
+{
+	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
+	guint8 endpoint;
+
+	endpoint = (endpoint_type == ARV_UV_ENDPOINT_CONTROL) ? priv->control_endpoint : priv->data_endpoint;
+
+	libusb_fill_bulk_transfer( transfer, priv->usb_device, endpoint | endpoint_flags, data, size, callback, callback_data, timeout );
+}
 
 gboolean
 arv_uv_device_bulk_transfer (ArvUvDevice *uv_device, ArvUvEndpointType endpoint_type, unsigned char endpoint_flags, void *data,
@@ -131,7 +153,8 @@ arv_uv_device_bulk_transfer (ArvUvDevice *uv_device, ArvUvEndpointType endpoint_
 static ArvStream *
 arv_uv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void *user_data, GError **error)
 {
-	return arv_uv_stream_new (ARV_UV_DEVICE (device), callback, user_data, error);
+	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (ARV_UV_DEVICE (device));
+	return arv_uv_stream_new (ARV_UV_DEVICE (device), callback, user_data, priv->usb_mode, error);
 }
 
 static gboolean
@@ -148,6 +171,7 @@ _send_cmd_and_receive_ack (ArvUvDevice *uv_device, ArvUvcpCommand command,
 	unsigned n_tries = 0;
 	gboolean success = FALSE;
 	ArvUvcpStatus status = ARV_UVCP_STATUS_SUCCESS;
+	static GMutex transfer_mutex;
 
 	switch (command) {
 		case ARV_UVCP_COMMAND_READ_MEMORY_CMD:
@@ -200,6 +224,8 @@ _send_cmd_and_receive_ack (ArvUvDevice *uv_device, ArvUvcpCommand command,
 	}
 
 	ack_packet = g_malloc (ack_size);
+
+	g_mutex_lock(&transfer_mutex);
 
 	do {
 		GError *local_error = NULL;
@@ -308,6 +334,8 @@ _send_cmd_and_receive_ack (ArvUvDevice *uv_device, ArvUvcpCommand command,
 
 		n_tries++;
 	} while (!success && n_tries < ARV_UV_DEVICE_N_TRIES_MAX);
+
+	g_mutex_unlock(&transfer_mutex);
 
 	g_free (ack_packet);
 	arv_uvcp_packet_free (packet);
@@ -625,6 +653,34 @@ reset_endpoint (libusb_device_handle *usb_device, guint8 endpoint, guint8 endpoi
 	}
 }
 
+static int
+get_guid_index(libusb_device * device) {
+	struct libusb_config_descriptor *config;
+	const struct libusb_interface *inter;
+	const struct libusb_interface_descriptor *interdesc;
+	int guid_index = -1;
+	int i, j;
+
+	libusb_get_config_descriptor (device, 0, &config);
+	for (i = 0; i < (int) config->bNumInterfaces; i++) {
+		inter = &config->interface[i];
+		for (j = 0; j < inter->num_altsetting; j++) {
+			interdesc = &inter->altsetting[j];
+			if (interdesc->bInterfaceClass == ARV_UV_INTERFACE_INTERFACE_CLASS &&
+			    interdesc->bInterfaceSubClass == ARV_UV_INTERFACE_INTERFACE_SUBCLASS) {
+				if (interdesc->bInterfaceProtocol == ARV_UV_INTERFACE_CONTROL_PROTOCOL &&
+				    interdesc->extra &&
+				    interdesc->extra_length >= ARV_UV_INTERFACE_GUID_INDEX_OFFSET + sizeof(unsigned char)) {
+					guid_index = (int) (*(interdesc->extra + ARV_UV_INTERFACE_GUID_INDEX_OFFSET));
+				}
+			}
+		}
+	}
+	libusb_free_config_descriptor (config);
+
+	return guid_index;
+}
+
 static gboolean
 _open_usb_device (ArvUvDevice *uv_device, GError **error)
 {
@@ -649,11 +705,13 @@ _open_usb_device (ArvUvDevice *uv_device, GError **error)
 			unsigned char *manufacturer;
 			unsigned char *product;
 			unsigned char *serial_number;
+			unsigned char *guid;
 			int index;
 
 			manufacturer = g_malloc0 (256);
 			product = g_malloc0 (256);
 			serial_number = g_malloc0 (256);
+			guid = g_malloc0 (256);
 
 			index = desc.iManufacturer;
 			if (index > 0)
@@ -664,15 +722,23 @@ _open_usb_device (ArvUvDevice *uv_device, GError **error)
 			index = desc.iSerialNumber;
 			if (index > 0)
 				libusb_get_string_descriptor_ascii (usb_device, index, serial_number, 256);
+			index = get_guid_index(devices[i]);
+			if (index > 0)
+				libusb_get_string_descriptor_ascii (usb_device, index, guid, 256);
 
-			if (g_strcmp0 ((char * ) manufacturer, priv->vendor) == 0 &&
-			    g_strcmp0 ((char * ) product, priv->product) == 0 &&
-			    g_strcmp0 ((char * ) serial_number, priv->serial_number) == 0) {
-				struct libusb_config_descriptor *config;
-				struct libusb_endpoint_descriptor endpoint;
-				const struct libusb_interface *inter;
-				const struct libusb_interface_descriptor *interdesc;
-                                int result;
+			if ((priv->vendor != NULL &&
+                             g_strcmp0 ((char * ) manufacturer, priv->vendor) == 0 &&
+                             priv->product != NULL &&
+                             g_strcmp0 ((char * ) product, priv->product) == 0 &&
+                             priv->serial_number != NULL &&
+                             g_strcmp0 ((char * ) serial_number, priv->serial_number) == 0) ||
+                            (priv->guid != NULL &&
+                             g_strcmp0 ((char * ) guid, priv->guid) == 0)) {
+                            struct libusb_config_descriptor *config;
+                            struct libusb_endpoint_descriptor endpoint;
+                            const struct libusb_interface *inter;
+                            const struct libusb_interface_descriptor *interdesc;
+                            int result;
 
 				priv->usb_device = usb_device;
 
@@ -711,6 +777,7 @@ _open_usb_device (ArvUvDevice *uv_device, GError **error)
 			g_free (manufacturer);
 			g_free (product);
 			g_free (serial_number);
+			g_free (guid);
 		}
 	}
 
@@ -723,6 +790,44 @@ _open_usb_device (ArvUvDevice *uv_device, GError **error)
 	}
 
 	return TRUE;
+}
+
+static gpointer
+event_thread_func(void *p)
+{
+	ArvUvDevicePrivate *priv = (ArvUvDevicePrivate *)p;
+
+	struct timeval tv = { 0, 100000 };
+
+        while (priv->event_thread_run)
+        {
+                libusb_handle_events_timeout(priv->usb, &tv);
+        }
+
+        return NULL;
+}
+
+/**
+ * arv_uv_device_set_usb_mode:
+ * @uv_device: a #ArvUvDevice
+ * @usb_mode: a #ArvUvUsbMode option
+ *
+ * Sets the option to utilize the USB synchronous or asynchronous device I/O API. The default mode is
+ * @ARV_UV_USB_MODE_SYNC, which means USB bulk transfer will be synchronously executed. This mode is qualified to work,
+ * but it has the performance issue with some high framerate device. Using @ARV_UV_USB_MODE_ASYNC possibly improves the
+ * bandwidth.
+ *
+ * Since: 0.8.17
+ */
+
+void
+arv_uv_device_set_usb_mode (ArvUvDevice *uv_device, ArvUvUsbMode usb_mode)
+{
+	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
+
+	g_return_if_fail (ARV_IS_UV_DEVICE (uv_device));
+
+	priv->usb_mode = usb_mode;
 }
 
 /**
@@ -747,6 +852,24 @@ arv_uv_device_new (const char *vendor, const char *product, const char *serial_n
 			       NULL);
 }
 
+/**
+ * arv_uv_device_new_from_guid:
+ * @guid: device GUID
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Returns: a newly created #ArvDevice using USB3 based protocol
+ *
+ * Since: 0.8.17
+ */
+
+ArvDevice *
+arv_uv_device_new_from_guid (const char *guid, GError **error)
+{
+	return g_initable_new (ARV_TYPE_UV_DEVICE, NULL, error,
+			       "guid", guid,
+			       NULL);
+}
+
 static void
 arv_uv_device_constructed (GObject *object)
 {
@@ -755,9 +878,16 @@ arv_uv_device_constructed (GObject *object)
 	GError *error = NULL;
         int result;
 
-	arv_info_device ("[UvDevice::new] Vendor  = %s", priv->vendor);
-	arv_info_device ("[UvDevice::new] Product = %s", priv->product);
-	arv_info_device ("[UvDevice::new] S/N     = %s", priv->serial_number);
+        G_OBJECT_CLASS (arv_uv_device_parent_class)->constructed (object);
+
+        if (priv->vendor != NULL)
+                arv_info_device ("[UvDevice::new] Vendor  = %s", priv->vendor);
+        if (priv->product != NULL)
+                arv_info_device ("[UvDevice::new] Product = %s", priv->product);
+        if (priv->serial_number != NULL)
+                arv_info_device ("[UvDevice::new] S/N     = %s", priv->serial_number);
+        if (priv->guid != NULL)
+                arv_info_device ("[UvDevice::new] GUID    = %s", priv->guid);
 
 	libusb_init (&priv->usb);
 	priv->packet_id = 65300; /* Start near the end of the circular counter */
@@ -775,42 +905,46 @@ arv_uv_device_constructed (GObject *object)
 
         result = libusb_claim_interface (priv->usb_device, priv->control_interface);
         if (result != 0) {
-		arv_device_take_init_error (ARV_DEVICE (uv_device),
+                arv_device_take_init_error (ARV_DEVICE (uv_device),
                                             g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_PROTOCOL_ERROR,
-                                                         "Failed to claim USB interface to '%s-%s-%s': %s",
-                                                         priv->vendor, priv->product, priv->serial_number,
+                                                         "Failed to claim USB interface to '%s-%s-%s-%s': %s",
+                                                         priv->vendor, priv->product, priv->serial_number, priv->guid,
                                                          libusb_error_name (result)));
                 return;
         }
 
         result = libusb_claim_interface (priv->usb_device, priv->data_interface);
         if (result != 0) {
-		arv_device_take_init_error (ARV_DEVICE (uv_device),
+                arv_device_take_init_error (ARV_DEVICE (uv_device),
                                             g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_PROTOCOL_ERROR,
-                                                         "Failed to claim USB interface to '%s-%s-%s': %s",
-                                                         priv->vendor, priv->product, priv->serial_number,
+                                                         "Failed to claim USB interface to '%s-%s-%s-%s': %s",
+                                                         priv->vendor, priv->product, priv->serial_number, priv->guid,
                                                          libusb_error_name (result)));
                 return;
         }
 
-
 	if ( !_bootstrap (uv_device)){
 		arv_device_take_init_error (ARV_DEVICE (uv_device),
                                             g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_PROTOCOL_ERROR,
-                                                         "Failed to bootstrap USB device '%s-%s-%s'",
-                                                         priv->vendor, priv->product, priv->serial_number));
+                                                         "Failed to bootstrap USB device '%s-%s-%s-%s'",
+                                                         priv->vendor, priv->product, priv->serial_number, priv->guid));
                 return;
         }
 
 	if (!ARV_IS_GC (priv->genicam)) {
 		arv_device_take_init_error (ARV_DEVICE (uv_device),
                                             g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_GENICAM_NOT_FOUND,
-                                                         "Failed to load Genicam data for USB device '%s-%s-%s'",
-                                                         priv->vendor, priv->product, priv->serial_number));
+                                                         "Failed to load Genicam data for USB device '%s-%s-%s-%s'",
+                                                         priv->vendor, priv->product, priv->serial_number, priv->guid));
                 return;
         }
 
-	reset_endpoint (priv->usb_device, priv->data_endpoint, LIBUSB_ENDPOINT_IN);
+        reset_endpoint (priv->usb_device, priv->data_endpoint, LIBUSB_ENDPOINT_IN);
+
+	priv->usb_mode = ARV_UV_USB_MODE_DEFAULT;
+
+	priv->event_thread_run = 1;
+	priv->event_thread = g_thread_new ( "arv_libusb", event_thread_func, priv);
 }
 
 static void
@@ -827,13 +961,18 @@ static void
 arv_uv_device_finalize (GObject *object)
 {
 	ArvUvDevice *uv_device = ARV_UV_DEVICE (object);
+
 	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
+
+	priv->event_thread_run = 0;
+	g_thread_join( priv->event_thread );
 
 	g_clear_object (&priv->genicam);
 
 	g_clear_pointer (&priv->vendor, g_free);
 	g_clear_pointer (&priv->product, g_free);
 	g_clear_pointer (&priv->serial_number, g_free);
+        g_clear_pointer (&priv->guid, g_free);
 	g_clear_pointer (&priv->genicam_xml, g_free);
 	if (priv->usb_device != NULL) {
 		libusb_release_interface (priv->usb_device, priv->control_interface);
@@ -863,6 +1002,10 @@ arv_uv_device_set_property (GObject *self, guint prop_id, const GValue *value, G
 		case PROP_UV_DEVICE_SERIAL_NUMBER:
 			g_free (priv->serial_number);
 			priv->serial_number = g_value_dup_string (value);
+			break;
+		case PROP_UV_DEVICE_GUID:
+			g_free (priv->guid);
+			priv->guid = g_value_dup_string (value);
 			break;
 		default:
 			G_OBJECT_WARN_INVALID_PROPERTY_ID (self, prop_id, pspec);
@@ -910,6 +1053,14 @@ arv_uv_device_class_init (ArvUvDeviceClass *uv_device_class)
 		 g_param_spec_string ("serial-number",
 				      "Serial number",
 				      "USB3 device serial number",
+				      NULL,
+				      G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY));
+	g_object_class_install_property
+		(object_class,
+		 PROP_UV_DEVICE_GUID,
+		 g_param_spec_string ("guid",
+				      "GUID",
+				      "USB3 device GUID",
 				      NULL,
 				      G_PARAM_WRITABLE | G_PARAM_CONSTRUCT_ONLY));
 }

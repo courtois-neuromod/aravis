@@ -44,6 +44,7 @@
 
 typedef struct {
 	GSocketAddress *interface_address;
+	GSocketAddress *broadcast_address;
 	GSocket *socket;
 } ArvGvDiscoverSocket;
 
@@ -84,20 +85,30 @@ arv_gv_discover_socket_list_new (void)
 	for (iface_iter = ifaces; iface_iter != NULL; iface_iter = iface_iter->next) {
 		ArvGvDiscoverSocket *discover_socket = g_new0 (ArvGvDiscoverSocket, 1);
 		GSocketAddress *socket_address;
+		GSocketAddress *socket_broadcast;
 		GInetAddress *inet_address;
+		GInetAddress *inet_broadcast;
 		char *inet_address_string;
+		char *inet_broadcast_string;
 		GError *error = NULL;
 		gint buffer_size = ARV_GV_INTERFACE_DISCOVERY_SOCKET_BUFFER_SIZE;
 		socket_address = g_socket_address_new_from_native (arv_network_interface_get_addr(iface_iter->data),
 									sizeof (struct sockaddr));
+		socket_broadcast = g_socket_address_new_from_native (arv_network_interface_get_broadaddr(iface_iter->data),
+									sizeof (struct sockaddr));
 		inet_address = g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_address));
+                inet_broadcast = g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (socket_broadcast));
 		inet_address_string = g_inet_address_to_string (inet_address);
-		arv_info_interface ("[GvDiscoverSocket::new] Add interface %s", inet_address_string);
+		inet_broadcast_string = g_inet_address_to_string (inet_broadcast);
+		arv_info_interface ("[GvDiscoverSocket::new] Add interface %s (%s)", inet_address_string, inet_broadcast_string);
 		g_free (inet_address_string);
+		g_free (inet_broadcast_string);
 		discover_socket->interface_address = g_inet_socket_address_new (inet_address, 0);
+		discover_socket->broadcast_address = g_inet_socket_address_new (inet_broadcast, ARV_GVCP_PORT);
 		g_object_unref (socket_address);
+		g_object_unref (socket_broadcast);
 
-		discover_socket->socket = g_socket_new (G_SOCKET_FAMILY_IPV4,
+		discover_socket->socket = g_socket_new (g_inet_address_get_family (inet_address),
 							G_SOCKET_TYPE_DATAGRAM,
 							G_SOCKET_PROTOCOL_UDP, NULL);
 		arv_socket_set_recv_buffer_size (g_socket_get_fd (discover_socket->socket), buffer_size);
@@ -135,6 +146,7 @@ arv_gv_discover_socket_list_free (ArvGvDiscoverSocketList *socket_list)
 		ArvGvDiscoverSocket *discover_socket = iter->data;
 
 		g_object_unref (discover_socket->interface_address);
+		g_object_unref (discover_socket->broadcast_address);
 		g_object_unref (discover_socket->socket);
 		g_free (discover_socket);
 	}
@@ -151,35 +163,50 @@ arv_gv_discover_socket_list_free (ArvGvDiscoverSocketList *socket_list)
 static void
 arv_gv_discover_socket_list_send_discover_packet (ArvGvDiscoverSocketList *socket_list)
 {
-	GInetAddress *broadcast_address;
-	GSocketAddress *broadcast_socket_address;
-	ArvGvcpPacket *packet;
-	GSList *iter;
-	size_t size;
+        GInetAddress *broadcast_address;
+        GSocketAddress *broadcast_socket_address;
+        ArvGvcpPacket *packet;
+        GSList *iter;
+        size_t size;
 
 	packet = arv_gvcp_packet_new_discovery_cmd (&size);
 
-	broadcast_address = g_inet_address_new_from_string ("255.255.255.255");
-	broadcast_socket_address = g_inet_socket_address_new (broadcast_address, ARV_GVCP_PORT);
-	g_object_unref (broadcast_address);
+        broadcast_address = g_inet_address_new_from_string ("255.255.255.255");
+        broadcast_socket_address = g_inet_socket_address_new (broadcast_address, ARV_GVCP_PORT);
+        g_object_unref (broadcast_address);
 
 	for (iter = socket_list->sockets; iter != NULL; iter = iter->next) {
 		ArvGvDiscoverSocket *discover_socket = iter->data;
 		GError *error = NULL;
 
-		arv_gv_discover_socket_set_broadcast (discover_socket, TRUE);
+                arv_gv_discover_socket_set_broadcast (discover_socket, TRUE);
+
 		g_socket_send_to (discover_socket->socket,
-				  broadcast_socket_address,
+                                  broadcast_socket_address,
 				  (const char *) packet, size,
 				  NULL, &error);
+
 		if (error != NULL) {
-			arv_warning_interface ("[ArvGVInterface::send_discover_packet] Error: %s", error->message);
-			g_error_free (error);
-		}
+			arv_warning_interface ("[ArvGVInterface::send_discover_packet] "
+                                               "Error sending packet using local broadcast: %s", error->message);
+			g_clear_error (&error);
+
+                        g_socket_send_to (discover_socket->socket,
+                                          discover_socket->broadcast_address,
+                                          (const char *) packet, size,
+                                          NULL, &error);
+
+                        if (error != NULL) {
+                                arv_warning_interface ("[ArvGVInterface::send_discover_packet] "
+                                                       "Error sending packet using directed broadcast: %s", error->message);
+                                g_clear_error (&error);
+                        }
+                }
+
 		arv_gv_discover_socket_set_broadcast (discover_socket, FALSE);
 	}
 
-	g_object_unref (broadcast_socket_address);
+        g_object_unref (broadcast_socket_address);
 
 	arv_gvcp_packet_free (packet);
 }
@@ -192,6 +219,7 @@ typedef struct {
 	char *vendor_serial;
 	char *vendor_alias_serial;
 	char *vendor;
+        char *manufacturer_info;
 	char *model;
 	char *serial;
 	char *mac;
@@ -220,19 +248,21 @@ arv_gv_interface_device_infos_new (GInetAddress *interface_address,
 
 	infos->vendor = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_MANUFACTURER_NAME_OFFSET],
 				   ARV_GVBS_MANUFACTURER_NAME_SIZE);
-	infos->model = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_MODEL_NAME_OFFSET],
-				  ARV_GVBS_MODEL_NAME_SIZE);
-	infos->serial = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_SERIAL_NUMBER_OFFSET],
-				   ARV_GVBS_SERIAL_NUMBER_SIZE);
-	infos->user_id = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_USER_DEFINED_NAME_OFFSET],
-				    ARV_GVBS_USER_DEFINED_NAME_SIZE);
-	infos->mac = g_strdup_printf ("%02x:%02x:%02x:%02x:%02x:%02x",
-				      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 2],
-				      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 3],
-				      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 4],
-				      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 5],
-				      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 6],
-				      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 7]);
+        infos->manufacturer_info = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_MANUFACTURER_INFO_OFFSET],
+                                              ARV_GVBS_MANUFACTURER_INFO_SIZE);
+        infos->model = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_MODEL_NAME_OFFSET],
+                                  ARV_GVBS_MODEL_NAME_SIZE);
+        infos->serial = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_SERIAL_NUMBER_OFFSET],
+                                   ARV_GVBS_SERIAL_NUMBER_SIZE);
+        infos->user_id = g_strndup ((char *) &infos->discovery_data[ARV_GVBS_USER_DEFINED_NAME_OFFSET],
+                                    ARV_GVBS_USER_DEFINED_NAME_SIZE);
+        infos->mac = g_strdup_printf ("%02x:%02x:%02x:%02x:%02x:%02x",
+                                      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 2],
+                                      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 3],
+                                      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 4],
+                                      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 5],
+                                      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 6],
+                                      infos->discovery_data[ARV_GVBS_DEVICE_MAC_ADDRESS_HIGH_OFFSET + 7]);
 
         /* Some devices return a zero length string as the serial identifier.
          * Use the MAC address as the serial number in this case */
@@ -282,6 +312,7 @@ arv_gv_interface_device_infos_unref (ArvGvInterfaceDeviceInfos *infos)
 		g_free (infos->vendor_serial);
 		g_free (infos->vendor_alias_serial);
 		g_free (infos->vendor);
+		g_free (infos->manufacturer_info);
 		g_free (infos->model);
 		g_free (infos->serial);
 		g_free (infos->mac);
@@ -385,28 +416,37 @@ _discover (GHashTable *devices, const char *device_id)
 						g_free (address_string);
 
 						if (devices != NULL) {
-							if (device_infos->id != NULL && device_infos->id[0] != '\0')
-								g_hash_table_replace (devices, device_infos->id,
-										      arv_gv_interface_device_infos_ref (device_infos));
-							if (device_infos->user_id != NULL && device_infos->user_id[0] != '\0')
-								g_hash_table_replace (devices, device_infos->user_id,
-										      arv_gv_interface_device_infos_ref (device_infos));
-							if (device_infos->vendor_serial != NULL && device_infos->vendor_serial[0] != '\0')
-								g_hash_table_replace (devices, device_infos->vendor_serial,
-										      arv_gv_interface_device_infos_ref (device_infos));
-							if (device_infos->vendor_alias_serial != NULL && device_infos->vendor_alias_serial[0] != '\0')
-								g_hash_table_replace (devices, device_infos->vendor_alias_serial,
-										      arv_gv_interface_device_infos_ref (device_infos));
-							g_hash_table_replace (devices, device_infos->mac,
-									      arv_gv_interface_device_infos_ref (device_infos));
-						} else {
-							if (device_id == NULL ||
-							    g_strcmp0 (device_infos->id, device_id) == 0 ||
-							    g_strcmp0 (device_infos->user_id, device_id) == 0 ||
-							    g_strcmp0 (device_infos->vendor_serial, device_id) == 0 ||
-							    g_strcmp0 (device_infos->vendor_alias_serial, device_id) == 0 ||
-							    g_strcmp0 (device_infos->mac, device_id) == 0) {
-								arv_gv_discover_socket_list_free (socket_list);
+							if (device_infos->id != NULL &&
+                                                            device_infos->id[0] != '\0')
+								g_hash_table_replace
+                                                                        (devices, device_infos->id,
+                                                                         arv_gv_interface_device_infos_ref (device_infos));
+                                                        if (device_infos->user_id != NULL &&
+                                                            device_infos->user_id[0] != '\0')
+                                                                g_hash_table_replace
+                                                                        (devices, device_infos->user_id,
+                                                                         arv_gv_interface_device_infos_ref (device_infos));
+                                                        if (device_infos->vendor_serial != NULL &&
+                                                            device_infos->vendor_serial[0] != '\0')
+                                                                g_hash_table_replace
+                                                                        (devices, device_infos->vendor_serial,
+                                                                         arv_gv_interface_device_infos_ref (device_infos));
+                                                        if (device_infos->vendor_alias_serial != NULL &&
+                                                            device_infos->vendor_alias_serial[0] != '\0')
+                                                                g_hash_table_replace
+                                                                        (devices, device_infos->vendor_alias_serial,
+                                                                         arv_gv_interface_device_infos_ref (device_infos));
+                                                        g_hash_table_replace
+                                                                (devices, device_infos->mac,
+                                                                 arv_gv_interface_device_infos_ref (device_infos));
+                                                } else {
+                                                        if (device_id == NULL ||
+                                                            g_strcmp0 (device_infos->id, device_id) == 0 ||
+                                                            g_strcmp0 (device_infos->user_id, device_id) == 0 ||
+                                                            g_strcmp0 (device_infos->vendor_serial, device_id) == 0 ||
+                                                            g_strcmp0 (device_infos->vendor_alias_serial, device_id) == 0 ||
+                                                            g_strcmp0 (device_infos->mac, device_id) == 0) {
+                                                                arv_gv_discover_socket_list_free (socket_list);
 
 								return device_infos;
 							}
@@ -466,6 +506,7 @@ arv_gv_interface_update_device_list (ArvInterface *interface, GArray *device_ids
 			ids->physical = g_strdup (infos->mac);
 			ids->address = g_inet_address_to_string (device_address);
 			ids->vendor = g_strdup (infos->vendor);
+                        ids->manufacturer_info = g_strdup (infos->manufacturer_info);
 			ids->model = g_strdup (infos->model);
 			ids->serial_nbr = g_strdup (infos->serial);
 

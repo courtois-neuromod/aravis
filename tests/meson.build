@@ -6,9 +6,14 @@ if get_option('tests')
 		['evaluator',	['main'],    []],
 		['buffer',	['main'],    []],
 		['misc',	['main'],    []],
-		['genicam',	['main'],    ['-DGENICAM_FILENAME="@0@/tests/data/genicam.xml"'.format (meson.source_root ())]],
-		['fake',	['main'],    ['-DGENICAM_FILENAME="@0@/src/arv-fake-camera.xml"'.format (meson.source_root ())]],
-		['fakegv',	['network'], ['-DGENICAM_FILENAME="@0@/src/arv-fake-camera.xml"'.format (meson.source_root ())]]
+		['dom',		['main'],
+                ['-DGENICAM_FILENAME="@0@/tests/data/genicam.xml"'.format (meson.project_source_root ())]],
+		['genicam',	['main'],
+                ['-DGENICAM_FILENAME="@0@/tests/data/genicam.xml"'.format (meson.project_source_root ())]],
+		['fake',	['main'],
+                ['-DGENICAM_FILENAME="@0@/src/arv-fake-camera.xml"'.format (meson.project_source_root ())]],
+		['fakegv',	['network'],
+                ['-DGENICAM_FILENAME="@0@/src/arv-fake-camera.xml"'.format (meson.project_source_root ())]]
 	]
 
 	foreach t: tests
@@ -32,9 +37,9 @@ if get_option('tests')
 			]
 
 			environment = [
-				'GI_TYPELIB_PATH=' + join_paths (meson.build_root() , 'src'),
-				'LD_LIBRARY_PATH=' + join_paths (meson.build_root() , 'src'),
-				'FAKE_GENICAM_PATH=' + join_paths (meson.source_root(), 'src', 'arv-fake-camera.xml')
+				'GI_TYPELIB_PATH=' + meson.project_build_root() / 'src',
+				'LD_LIBRARY_PATH=' + meson.project_build_root() / 'src',
+				'FAKE_GENICAM_PATH=' + meson.project_source_root() / 'src' / 'arv-fake-camera.xml'
 			]
 
 			foreach t: python_tests
@@ -43,9 +48,9 @@ if get_option('tests')
 		endif
 
 		py_script_config_data = configuration_data ()
-	        py_script_config_data.set ('GI_TYPELIB_PATH', join_paths (meson.build_root() , 'src'))
-	        py_script_config_data.set ('LD_LIBRARY_PATH', join_paths (meson.build_root() , 'src'))
-		py_script_config_data.set ('FAKE_GENICAM_PATH', join_paths (meson.source_root(), 'src', 'arv-fake-camera.xml'))
+	        py_script_config_data.set ('GI_TYPELIB_PATH', meson.project_build_root() / 'src')
+	        py_script_config_data.set ('LD_LIBRARY_PATH', meson.project_build_root() / 'src')
+		py_script_config_data.set ('FAKE_GENICAM_PATH', meson.project_source_root() / 'src' / 'arv-fake-camera.xml')
 
 		configure_file (input: 'pylaunch.in', output: 'pylaunch', configuration: py_script_config_data)
 		configure_file (input: 'pylaunch-dbg.in', output: 'pylaunch-dbg', configuration: py_script_config_data)
@@ -71,8 +76,8 @@ if get_option('tests')
 		['cpp-test',			'cpp.cc']
 	]
 
-	if host_machine.system()!='windows'
-		examples+=[['realtime-test','realtimetest.c']] # uses Linux RT API unavailable under mingw
+	if host_machine.system()=='linux'
+		examples+=[['realtime-test','realtimetest.c']] # uses Linux RT API unavailable on other platforms
 	endif
 
 	foreach example: examples
