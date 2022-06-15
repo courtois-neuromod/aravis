@@ -278,19 +278,27 @@ arv_evaluator_token_debug (ArvEvaluatorToken *token, GHashTable *variables)
 	switch (token->token_id) {
 		case ARV_EVALUATOR_TOKEN_VARIABLE:
 			value = g_hash_table_lookup (variables, token->data.name);
-			arv_debug_evaluator ("(var) %s = %g%s", token->data.name,
-					   value != NULL ? arv_value_get_double (value) : 0,
-					   value != NULL ? "" : " not found");
-			break;
-		case ARV_EVALUATOR_TOKEN_CONSTANT_INT64:
-			arv_debug_evaluator ("(int64) %" G_GINT64_FORMAT, token->data.v_int64);
-			break;
-		case ARV_EVALUATOR_TOKEN_CONSTANT_DOUBLE:
-			arv_debug_evaluator ("(double) %g", token->data.v_double);
-			break;
-		default:
-			arv_debug_evaluator ("(operator) %s", arv_evaluator_token_infos[token->token_id].tag);
-	}
+                        if (value != NULL && arv_value_holds_double (value))
+                                arv_debug_evaluator ("(var) %s = %g (double)",
+                                                     token->data.name,
+                                                     arv_value_get_double (value));
+                        else if (value != NULL && arv_value_holds_int64 (value))
+                                arv_debug_evaluator ("(var) %s = 0x%016" G_GINT64_MODIFIER "x %" G_GINT64_FORMAT" (int64)",
+                                                     token->data.name,
+                                                     arv_value_get_int64 (value),
+                                                     arv_value_get_int64 (value));
+                        else
+                                arv_debug_evaluator ("(var) %s not found", token->data.name);
+                        break;
+                case ARV_EVALUATOR_TOKEN_CONSTANT_INT64:
+                        arv_debug_evaluator ("(int64) %" G_GINT64_FORMAT, token->data.v_int64);
+                        break;
+                case ARV_EVALUATOR_TOKEN_CONSTANT_DOUBLE:
+                        arv_debug_evaluator ("(double) %g", token->data.v_double);
+                        break;
+                default:
+                        arv_debug_evaluator ("(operator) %s", arv_evaluator_token_infos[token->token_id].tag);
+        }
 }
 
 static gboolean
@@ -1200,7 +1208,7 @@ arv_evaluator_set_error (GError **error, ArvEvaluatorStatus status)
 	g_set_error (error,
 		     g_quark_from_string ("Aravis"),
 		     status,
-		     "Parsing error: %s",
+		     "Parsing error (%s)",
 		     arv_evaluator_status_strings [MIN (status,
 							G_N_ELEMENTS (arv_evaluator_status_strings)-1)]);
 
@@ -1427,9 +1435,9 @@ arv_evaluator_set_double_variable (ArvEvaluator *evaluator, const char *name, do
 	if (old_value != NULL && (arv_value_get_double (old_value) == v_double))
 		return;
 
-	g_hash_table_insert (evaluator->priv->variables,
-			     g_strdup (name),
-			     arv_value_new_double (v_double));
+        g_hash_table_replace (evaluator->priv->variables,
+                              g_strdup (name),
+                              arv_value_new_double (v_double));
 
 	arv_debug_evaluator ("[Evaluator::set_double_variable] %s = %g",
 			   name, v_double);
@@ -1447,9 +1455,9 @@ arv_evaluator_set_int64_variable (ArvEvaluator *evaluator, const char *name, gin
 	if (old_value != NULL && (arv_value_get_int64 (old_value) == v_int64))
 		return;
 
-	g_hash_table_insert (evaluator->priv->variables,
-			     g_strdup (name),
-			     arv_value_new_int64 (v_int64));
+        g_hash_table_replace (evaluator->priv->variables,
+                              g_strdup (name),
+                              arv_value_new_int64 (v_int64));
 
 	arv_debug_evaluator ("[Evaluator::set_int64_variable] %s = %" G_GINT64_FORMAT, name, v_int64);
 }

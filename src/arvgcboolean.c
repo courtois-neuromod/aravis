@@ -102,7 +102,8 @@ arv_gc_boolean_get_on_value (ArvGcBoolean *gc_boolean, GError **error)
 	on_value = arv_gc_property_node_get_int64 (gc_boolean->on_value, &local_error);
 
 	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 		return 1;
 	}
 
@@ -121,7 +122,8 @@ arv_gc_boolean_get_off_value (ArvGcBoolean *gc_boolean, GError **error)
 	off_value = arv_gc_property_node_get_int64 (gc_boolean->off_value, &local_error);
 
 	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 		return 0;
 	}
 
@@ -151,17 +153,22 @@ arv_gc_boolean_get_value (ArvGcBoolean *gc_boolean, GError **error)
 	if (gc_boolean->value == NULL)
 		return FALSE;
 
+        if (!arv_gc_feature_node_check_read_access (ARV_GC_FEATURE_NODE (gc_boolean), error))
+                return FALSE;
+
 	value = arv_gc_property_node_get_int64 (gc_boolean->value, &local_error);
 
 	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 		return FALSE;
 	}
 
        	on_value = arv_gc_boolean_get_on_value (gc_boolean, &local_error);
 
 	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 		return FALSE;
 	}
 
@@ -182,9 +189,15 @@ arv_gc_boolean_get_value (ArvGcBoolean *gc_boolean, GError **error)
 void
 arv_gc_boolean_get_value_gi (ArvGcBoolean *gc_boolean, gboolean *value, GError **error)
 {
+        GError *local_error = NULL;
+
 	g_return_if_fail (value != NULL);
 
-	*value = arv_gc_boolean_get_value (gc_boolean, error);
+	*value = arv_gc_boolean_get_value (gc_boolean, &local_error);
+
+	if (local_error != NULL)
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 }
 
 void
@@ -196,13 +209,17 @@ arv_gc_boolean_set_value (ArvGcBoolean *gc_boolean, gboolean v_boolean, GError *
 	g_return_if_fail (ARV_IS_GC_BOOLEAN (gc_boolean));
 	g_return_if_fail (error == NULL || *error == NULL);
 
+        if (!arv_gc_feature_node_check_write_access (ARV_GC_FEATURE_NODE (gc_boolean), error))
+                return;
+
 	if (v_boolean)
 		value = arv_gc_boolean_get_on_value (gc_boolean, &local_error);
 	else
 		value = arv_gc_boolean_get_off_value (gc_boolean, &local_error);
 
 	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 		return;
 	}
 
@@ -210,7 +227,8 @@ arv_gc_boolean_set_value (ArvGcBoolean *gc_boolean, gboolean v_boolean, GError *
 	arv_gc_property_node_set_int64 (gc_boolean->value, value, &local_error);
 
 	if (local_error != NULL)
-		g_propagate_error (error, local_error);
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (gc_boolean)));
 }
 
 static ArvGcFeatureNode *
@@ -264,4 +282,5 @@ arv_gc_boolean_class_init (ArvGcBooleanClass *this_class)
 	dom_node_class->post_new_child = arv_gc_boolean_post_new_child;
 	dom_node_class->pre_remove_child = arv_gc_boolean_pre_remove_child;
 	gc_feature_node_class->get_linked_feature = arv_gc_boolean_get_linked_feature;
+        gc_feature_node_class->default_access_mode = ARV_GC_ACCESS_MODE_RW;
 }

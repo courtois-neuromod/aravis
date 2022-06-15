@@ -105,147 +105,14 @@ arv_gc_enumeration_pre_remove_child (ArvDomNode *self, ArvDomNode *child)
 
 /* ArvGcEnumeration implementation */
 
-const char *
-arv_gc_enumeration_get_string_value (ArvGcEnumeration *enumeration, GError **error)
-{
-	const GSList *iter;
-	GError *local_error = NULL;
-	gint64 value;
-
-	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), NULL);
-	g_return_val_if_fail (error == NULL || *error == NULL, NULL);
-
-	value = arv_gc_enumeration_get_int_value (enumeration, &local_error);
-
-	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
-		return NULL;
-	}
-
-	for (iter = enumeration->entries; iter != NULL; iter = iter->next) {
-		gint64 enum_value;
-
-		enum_value = arv_gc_enum_entry_get_value (iter->data, &local_error);
-
-		if (local_error != NULL) {
-			g_propagate_error (error, local_error);
-			return NULL;
-		}
-
-		if (enum_value == value) {
-			const char *string;
-
-			string = arv_gc_feature_node_get_name (iter->data);
-			arv_debug_genicam ("[GcEnumeration::get_string_value] value = %" G_GINT64_FORMAT " - string = %s",
-					 value, string);
-			return string;
-		}
-	}
-
-	arv_warning_genicam ("[GcEnumeration::get_string_value] value = %" G_GINT64_FORMAT " not found for node %s",
-			     value, arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
-
-	return NULL;
-}
-
-gboolean
-arv_gc_enumeration_set_string_value (ArvGcEnumeration *enumeration, const char *value, GError **error)
-{
-	const GSList *iter;
-
-	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), FALSE);
-	g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
-
-	for (iter = enumeration->entries; iter != NULL; iter = iter->next)
-		if (g_strcmp0 (arv_gc_feature_node_get_name (iter->data), value) == 0) {
-			GError *local_error = NULL;
-			gint64 enum_value;
-
-			enum_value = arv_gc_enum_entry_get_value (iter->data, &local_error);
-
-			arv_debug_genicam ("[GcEnumeration::set_string_value] value = %" G_GINT64_FORMAT " - string = %s",
-					 enum_value, value);
-
-			if (local_error != NULL) {
-				g_propagate_error (error, local_error);
-				return FALSE;
-			}
-
-			arv_gc_enumeration_set_int_value (enumeration, enum_value, &local_error);
-
-			if (local_error != NULL) {
-				g_propagate_error (error, local_error);
-				return FALSE;
-			}
-
-			return TRUE;
-		}
-
-	arv_warning_genicam ("[GcEnumeration::set_string_value] entry %s not found", value);
-
-	g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_ENUM_ENTRY_NOT_FOUND, "'%s' is not an entry of enumeration '%s'",
-		     value, arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
-
-	return FALSE;
-}
-
-gint64
-arv_gc_enumeration_get_int_value (ArvGcEnumeration *enumeration, GError **error)
-{
-	GError *local_error = NULL;
-	gint64 value;
-	gint64 *available_values;
-	unsigned n_values;
-	unsigned i;
-	gboolean found = FALSE;
-
-	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), 0);
-	g_return_val_if_fail (error == NULL || *error == NULL, 0);
-
-	if (enumeration->value == NULL)
-		return 0;
-
-	value = arv_gc_property_node_get_int64 (enumeration->value, &local_error);
-
-	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
-		return 0;
-	}
-
-	available_values = arv_gc_enumeration_dup_available_int_values (enumeration, &n_values, &local_error);
-	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
-		return value;
-	}
-
-	if (available_values == NULL) {
-		g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_EMPTY_ENUMERATION,
-			     "No available entry found in <Enumeration> '%s'",
-			     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
-		return value;
-	}
-
-	for (i = 0; i < n_values; i++)
-		if (available_values[i] == value)
-			found = TRUE;
-
-	g_free (available_values);
-
-	if (!found)
-		g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_OUT_OF_RANGE,
-			     "Value not found in <Enumeration> '%s'",
-			     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
-
-	return value;
-}
-
 /**
  * arv_gc_enumeration_dup_available_int_values:
  * @enumeration: a #ArvGcEnumeration
  * @n_values: (out): the number of values
  * @error: (out): the error that occured, or NULL
  *
- * Return value: (transfer full) (array length=n_values): a newly allocated array of 64 bit integers, to be freed after use using g_free().
+ * Return value: (transfer full) (array length=n_values): a newly allocated array of 64 bit integers, to be freed after
+ * use using g_free().
  *
  * Since: 0.8.0
  */
@@ -275,7 +142,8 @@ arv_gc_enumeration_dup_available_int_values (ArvGcEnumeration *enumeration, guin
 		is_available = arv_gc_feature_node_is_available (iter->data, &local_error);
 
 		if (local_error != NULL) {
-			g_propagate_error (error, local_error);
+			g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                    arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
 			*n_values = 0;
 			g_slist_free (available_entries);
 
@@ -288,9 +156,10 @@ arv_gc_enumeration_dup_available_int_values (ArvGcEnumeration *enumeration, guin
 			is_implemented = arv_gc_feature_node_is_implemented (iter->data, &local_error);
 
 			if (local_error != NULL) {
-				g_propagate_error (error, local_error);
-				*n_values = 0;
-				g_slist_free (available_entries);
+                                g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+                                *n_values = 0;
+                                g_slist_free (available_entries);
 
 				return NULL;
 			}
@@ -313,10 +182,11 @@ arv_gc_enumeration_dup_available_int_values (ArvGcEnumeration *enumeration, guin
 		values[i] = arv_gc_enum_entry_get_value (iter->data, &local_error);
 
 		if (local_error != NULL) {
-			g_propagate_error (error, local_error);
-			*n_values = 0;
-			g_slist_free (available_entries);
-			g_free (values);
+                        g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                    arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+                        *n_values = 0;
+                        g_slist_free (available_entries);
+                        g_free (values);
 
 			return NULL;
 		}
@@ -353,7 +223,8 @@ _dup_available_string_values (ArvGcEnumeration *enumeration, gboolean display_na
 		is_available = arv_gc_feature_node_is_available (iter->data, &local_error);
 
 		if (local_error != NULL) {
-			g_propagate_error (error, local_error);
+                        g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                    arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
 			*n_values = 0;
 			g_slist_free (available_entries);
 
@@ -366,9 +237,10 @@ _dup_available_string_values (ArvGcEnumeration *enumeration, gboolean display_na
 			is_implemented = arv_gc_feature_node_is_implemented (iter->data, &local_error);
 
 			if (local_error != NULL) {
-				g_propagate_error (error, local_error);
-				*n_values = 0;
-				g_slist_free (available_entries);
+                                g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+                                *n_values = 0;
+                                g_slist_free (available_entries);
 
 				return NULL;
 			}
@@ -440,8 +312,69 @@ arv_gc_enumeration_dup_available_display_names (ArvGcEnumeration *enumeration, g
 	return _dup_available_string_values (enumeration, TRUE, n_values, error);
 }
 
-gboolean
-arv_gc_enumeration_set_int_value (ArvGcEnumeration *enumeration, gint64 value, GError **error)
+static gint64
+_get_int_value (ArvGcEnumeration *enumeration, GError **error)
+{
+	GError *local_error = NULL;
+	gint64 value;
+	gint64 *available_values;
+	unsigned n_values;
+	unsigned i;
+	gboolean found = FALSE;
+
+	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), 0);
+	g_return_val_if_fail (error == NULL || *error == NULL, 0);
+
+	if (enumeration->value == NULL)
+		return 0;
+
+	value = arv_gc_property_node_get_int64 (enumeration->value, &local_error);
+
+	if (local_error != NULL) {
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+		return 0;
+	}
+
+	available_values = arv_gc_enumeration_dup_available_int_values (enumeration, &n_values, &local_error);
+	if (local_error != NULL) {
+		g_propagate_error (error, local_error);
+		return value;
+	}
+
+	if (available_values == NULL) {
+		g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_EMPTY_ENUMERATION,
+			     "[%s] No available entry",
+			     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+		return value;
+	}
+
+	for (i = 0; i < n_values; i++)
+		if (available_values[i] == value)
+			found = TRUE;
+
+	g_free (available_values);
+
+	if (!found)
+		g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_OUT_OF_RANGE,
+			     "[%s] Value not found",
+			     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+
+	return value;
+}
+
+gint64
+arv_gc_enumeration_get_int_value (ArvGcEnumeration *enumeration, GError **error)
+{
+
+        if (!arv_gc_feature_node_check_read_access (ARV_GC_FEATURE_NODE (enumeration), error))
+                return 0;
+
+        return _get_int_value (enumeration, error);
+}
+
+static gboolean
+_set_int_value (ArvGcEnumeration *enumeration, gint64 value, GError **error)
 {
 	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), FALSE);
 	g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
@@ -457,13 +390,14 @@ arv_gc_enumeration_set_int_value (ArvGcEnumeration *enumeration, gint64 value, G
 
 			available_values = arv_gc_enumeration_dup_available_int_values (enumeration, &n_values, &local_error);
 			if (local_error != NULL) {
-				g_propagate_error (error, local_error);
+                                g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
 				return FALSE;
 			}
 
 			if (available_values == NULL) {
 				g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_EMPTY_ENUMERATION,
-					     "No available entry found in <Enumeration> '%s'",
+					     "[%s] No available entry found",
 					     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
 				return FALSE;
 			}
@@ -476,8 +410,9 @@ arv_gc_enumeration_set_int_value (ArvGcEnumeration *enumeration, gint64 value, G
 
 			if (!found) {
 				g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_OUT_OF_RANGE,
-					     "Value not found in <Enumeration> '%s'",
-					     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+					     "[%s] Value %" G_GINT64_FORMAT " not found",
+					     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)),
+                                             value);
 				return FALSE;
 			}
 		}
@@ -486,17 +421,133 @@ arv_gc_enumeration_set_int_value (ArvGcEnumeration *enumeration, gint64 value, G
 		arv_gc_property_node_set_int64 (enumeration->value, value, &local_error);
 
 		if (local_error != NULL) {
-			g_propagate_error (error, local_error);
-			return FALSE;
-		}
+                        g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                    arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+                        return FALSE;
+                }
 
 		return TRUE;
 	}
 
 	g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_PROPERTY_NOT_DEFINED,
-		     "<Value> node node found for '%s'", arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+		     "[%s] <Value> node not found", arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
 
 	return FALSE;
+}
+
+gboolean
+arv_gc_enumeration_set_int_value (ArvGcEnumeration *enumeration, gint64 value, GError **error)
+{
+        if (!arv_gc_feature_node_check_write_access (ARV_GC_FEATURE_NODE (enumeration), error))
+                return FALSE;
+
+        return _set_int_value (enumeration, value, error);
+}
+
+static const char *
+_get_string_value (ArvGcEnumeration *enumeration, GError **error)
+{
+	const GSList *iter;
+	GError *local_error = NULL;
+	gint64 value;
+
+	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), NULL);
+	g_return_val_if_fail (error == NULL || *error == NULL, NULL);
+
+	value = _get_int_value (enumeration, &local_error);
+
+	if (local_error != NULL) {
+		g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+		return NULL;
+	}
+
+	for (iter = enumeration->entries; iter != NULL; iter = iter->next) {
+		gint64 enum_value;
+
+		enum_value = arv_gc_enum_entry_get_value (iter->data, &local_error);
+
+		if (local_error != NULL) {
+                        g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                    arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+                        return NULL;
+                }
+
+		if (enum_value == value) {
+			const char *string;
+
+			string = arv_gc_feature_node_get_name (iter->data);
+			arv_debug_genicam ("[GcEnumeration::get_string_value] value = %" G_GINT64_FORMAT " - string = %s",
+					 value, string);
+			return string;
+		}
+	}
+
+	arv_warning_genicam ("[GcEnumeration::get_string_value] value = %" G_GINT64_FORMAT " not found for node %s",
+			     value, arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+
+	return NULL;
+}
+
+const char *
+arv_gc_enumeration_get_string_value (ArvGcEnumeration *enumeration, GError **error)
+{
+        if (!arv_gc_feature_node_check_read_access (ARV_GC_FEATURE_NODE (enumeration), error))
+                return NULL;
+
+        return _get_string_value (enumeration, error);
+}
+
+static gboolean
+_set_string_value (ArvGcEnumeration *enumeration, const char *value, GError **error)
+{
+	const GSList *iter;
+
+	g_return_val_if_fail (ARV_IS_GC_ENUMERATION (enumeration), FALSE);
+	g_return_val_if_fail (error == NULL || *error == NULL, FALSE);
+
+	for (iter = enumeration->entries; iter != NULL; iter = iter->next)
+		if (g_strcmp0 (arv_gc_feature_node_get_name (iter->data), value) == 0) {
+			GError *local_error = NULL;
+			gint64 enum_value;
+
+			enum_value = arv_gc_enum_entry_get_value (iter->data, &local_error);
+
+			arv_debug_genicam ("[GcEnumeration::set_string_value] value = %" G_GINT64_FORMAT " - string = %s",
+					 enum_value, value);
+
+			if (local_error != NULL) {
+                                g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+                                return FALSE;
+                        }
+
+			_set_int_value (enumeration, enum_value, &local_error);
+
+			if (local_error != NULL) {
+                                g_propagate_prefixed_error (error, local_error, "[%s] ",
+                                                            arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)));
+				return FALSE;
+			}
+
+			return TRUE;
+		}
+
+	arv_warning_genicam ("[GcEnumeration::set_string_value] entry %s not found", value);
+
+	g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_ENUM_ENTRY_NOT_FOUND, "[%s] '%s' not an entry",
+		     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (enumeration)), value);
+
+	return FALSE;
+}
+
+gboolean
+arv_gc_enumeration_set_string_value (ArvGcEnumeration *enumeration, const char *value, GError **error)
+{
+        if (!arv_gc_feature_node_check_write_access (ARV_GC_FEATURE_NODE (enumeration), error))
+                return FALSE;
+
+        return _set_string_value (enumeration, value, error);
 }
 
 /**
@@ -570,6 +621,7 @@ arv_gc_enumeration_class_init (ArvGcEnumerationClass *this_class)
 	dom_node_class->post_new_child = arv_gc_enumeration_post_new_child;
 	dom_node_class->pre_remove_child = arv_gc_enumeration_pre_remove_child;
 	gc_feature_node_class->get_linked_feature = arv_gc_enumeration_get_linked_feature;
+        gc_feature_node_class->default_access_mode = ARV_GC_ACCESS_MODE_RW;
 }
 
 /* ArvGcInteger interface implementation */
@@ -579,7 +631,7 @@ arv_gc_enumeration_get_integer_value (ArvGcInteger *gc_integer, GError **error)
 {
 	ArvGcEnumeration *gc_enumeration = ARV_GC_ENUMERATION (gc_integer);
 
-	return arv_gc_enumeration_get_int_value (gc_enumeration, error);
+	return _get_int_value (gc_enumeration, error);
 }
 
 static void
@@ -587,7 +639,7 @@ arv_gc_enumeration_set_integer_value (ArvGcInteger *gc_integer, gint64 value, GE
 {
 	ArvGcEnumeration *gc_enumeration = ARV_GC_ENUMERATION (gc_integer);
 
-	arv_gc_enumeration_set_int_value (gc_enumeration, value, error);
+	_set_int_value (gc_enumeration, value, error);
 }
 
 static void
@@ -602,7 +654,7 @@ arv_gc_enumeration_get_str_value (ArvGcString *gc_string, GError **error)
 {
 	ArvGcEnumeration *gc_enumeration = ARV_GC_ENUMERATION (gc_string);
 
-	return arv_gc_enumeration_get_string_value (gc_enumeration, error);
+	return _get_string_value (gc_enumeration, error);
 }
 
 static void
@@ -610,7 +662,7 @@ arv_gc_enumeration_set_str_value (ArvGcString *gc_string, const char *value, GEr
 {
 	ArvGcEnumeration *gc_enumeration = ARV_GC_ENUMERATION (gc_string);
 
-	arv_gc_enumeration_set_string_value (gc_enumeration, value, error);
+	_set_string_value (gc_enumeration, value, error);
 }
 
 static gint64

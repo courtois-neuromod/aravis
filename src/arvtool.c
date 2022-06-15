@@ -32,6 +32,7 @@ static char *arv_option_device_address = NULL;
 static char *arv_option_debug_domains = NULL;
 static char *arv_option_register_cache = NULL;
 static char *arv_option_range_check = NULL;
+static char *arv_option_access_check = NULL;
 static gboolean arv_option_show_time = FALSE;
 static gboolean arv_option_show_version = FALSE;
 
@@ -55,6 +56,11 @@ static const GOptionEntry arv_option_entries[] =
 	{
 		"range-check",			'\0', 0, G_OPTION_ARG_STRING,
 		&arv_option_range_check,	"Range check policy",
+		"{disable|enable|debug}"
+	},
+	{
+		"access-check",			'\0', 0, G_OPTION_ARG_STRING,
+		&arv_option_access_check,	"Feature access check policy",
 		"{disable|enable}"
 	},
 	{
@@ -114,6 +120,9 @@ arv_tool_show_feature (ArvGcFeatureNode *node, ArvToolListMode list_mode, int le
                         char *value = NULL;
                         GError *error = NULL;
                         gboolean is_selector;
+                        const char *access_mode;
+
+                        access_mode = arv_gc_access_mode_to_string (arv_gc_feature_node_get_actual_access_mode (node));
 
                         if (list_mode == ARV_TOOL_LIST_MODE_VALUES) {
                                 const char *unit;
@@ -157,13 +166,13 @@ arv_tool_show_feature (ArvGcFeatureNode *node, ArvToolListMode list_mode, int le
                                 g_clear_error (&error);
                         } else {
                                 if (value != NULL && value[0] != '\0')
-                                        printf ("%*s%-12s: '%s' = %s\n", 4 * level, "",
+                                        printf ("%*s%-13s: [%s] '%s' = %s\n", 4 * level, "",
                                                 arv_dom_node_get_node_name (ARV_DOM_NODE (node)),
-                                                arv_gc_feature_node_get_name (node), value);
+                                                access_mode, arv_gc_feature_node_get_name (node), value);
                                 else
-                                        printf ("%*s%-12s: '%s'\n", 4 * level, "",
+                                        printf ("%*s%-13s: [%s] '%s'\n", 4 * level, "",
                                                 arv_dom_node_get_node_name (ARV_DOM_NODE (node)),
-                                                arv_gc_feature_node_get_name (node));
+                                                access_mode, arv_gc_feature_node_get_name (node));
 
                                 if (is_selector) {
                                         const GSList *iter;
@@ -388,7 +397,8 @@ arv_tool_control (int argc, char **argv, ArvDevice *device)
 static void
 arv_tool_execute_command (int argc, char **argv, ArvDevice *device,
 			  ArvRegisterCachePolicy register_cache_policy,
-			  ArvRangeCheckPolicy range_check_policy)
+			  ArvRangeCheckPolicy range_check_policy,
+                          ArvAccessCheckPolicy access_check_policy)
 {
 	ArvGc *genicam;
 	const char *command = argv[1];
@@ -399,6 +409,7 @@ arv_tool_execute_command (int argc, char **argv, ArvDevice *device,
 
 	arv_device_set_register_cache_policy (device, register_cache_policy);
 	arv_device_set_range_check_policy (device, range_check_policy);
+	arv_device_set_access_check_policy (device, access_check_policy);
 
 	genicam = arv_device_get_genicam (device);
 
@@ -457,6 +468,7 @@ main (int argc, char **argv)
 	ArvDevice *device;
 	ArvRegisterCachePolicy register_cache_policy;
 	ArvRangeCheckPolicy range_check_policy;
+        ArvAccessCheckPolicy access_check_policy;
         GRegex *regex;
 	const char *device_id;
 	GOptionContext *context;
@@ -514,6 +526,17 @@ main (int argc, char **argv)
 		return EXIT_FAILURE;
 	}
 
+	if (arv_option_access_check == NULL)
+		access_check_policy = ARV_ACCESS_CHECK_POLICY_DEFAULT;
+	else if (g_strcmp0 (arv_option_access_check, "disable") == 0)
+		access_check_policy = ARV_ACCESS_CHECK_POLICY_DISABLE;
+	else if (g_strcmp0 (arv_option_access_check, "enable") == 0)
+		access_check_policy = ARV_ACCESS_CHECK_POLICY_ENABLE;
+	else {
+		printf ("Invalid access check policy\n");
+		return EXIT_FAILURE;
+	}
+
 	if (!arv_debug_enable (arv_option_debug_domains)) {
 		if (g_strcmp0 (arv_option_debug_domains, "help") != 0)
 			printf ("Invalid debug selection\n");
@@ -540,7 +563,9 @@ main (int argc, char **argv)
 				printf ("%s\n", device_id);
 			} else {
 				arv_tool_execute_command (argc, argv, device,
-							  register_cache_policy, range_check_policy);
+							  register_cache_policy,
+                                                          range_check_policy,
+                                                          access_check_policy);
                         }
 			g_object_unref (device);
                 } else {
@@ -579,7 +604,9 @@ main (int argc, char **argv)
 
                                         if (ARV_IS_DEVICE (device)) {
                                                 arv_tool_execute_command (argc, argv, device,
-                                                                          register_cache_policy, range_check_policy);
+                                                                          register_cache_policy,
+                                                                          range_check_policy,
+                                                                          access_check_policy);
 
                                                 g_object_unref (device);
                                         } else {

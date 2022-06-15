@@ -37,8 +37,19 @@
 #include <memory.h>
 
 typedef struct {
+	const char *vendor_selection;
+	const char *model_selection;
+} ArvGvLegacyInfos;
+
+static ArvGvLegacyInfos arv_gc_port_legacy_infos[] = {
+   { .vendor_selection = "Imperx", .model_selection = "IpxGEVCamera"},
+};
+
+typedef struct {
 	ArvGcPropertyNode *chunk_id;
 	ArvGcPropertyNode *event_id;
+	gboolean has_done_legacy_check;
+	gboolean has_legacy_infos;
 } ArvGcPortPrivate;
 
 struct _ArvGcPort {
@@ -95,13 +106,34 @@ _pre_remove_child (ArvDomNode *self, ArvDomNode *child)
 static gboolean
 _use_legacy_endianness_mechanism (ArvGcPort *port, guint64 length)
 {
-	ArvDomDocument *document;
-	ArvGcRegisterDescriptionNode *register_description;
+	if (!port->priv->has_done_legacy_check) {
+		ArvDomDocument *document;
+		ArvGcRegisterDescriptionNode *register_description;
+		const char *vendor_name;
+		const char *model_name;
+		int i;
 
-	document = arv_dom_node_get_owner_document (ARV_DOM_NODE (port));
-	register_description = ARV_GC_REGISTER_DESCRIPTION_NODE (arv_dom_document_get_document_element (document));
+		document = arv_dom_node_get_owner_document (ARV_DOM_NODE (port));
+		register_description = ARV_GC_REGISTER_DESCRIPTION_NODE (arv_dom_document_get_document_element (document));
+		vendor_name = arv_gc_register_description_node_get_vendor_name(register_description);
+		model_name = arv_gc_register_description_node_get_model_name(register_description);
 
-	return length == 4 && (arv_gc_register_description_node_compare_schema_version (register_description, 1, 1, 0) < 0);
+		if (arv_gc_register_description_node_compare_schema_version (register_description, 1, 1, 0) < 0) {
+			port->priv->has_legacy_infos = TRUE;
+		} else {
+			for (i = 0; i < G_N_ELEMENTS (arv_gc_port_legacy_infos); i++) {
+				if (g_pattern_match_simple(arv_gc_port_legacy_infos[i].vendor_selection, vendor_name) == TRUE &&
+					g_pattern_match_simple(arv_gc_port_legacy_infos[i].model_selection, model_name) == TRUE) {
+					port->priv->has_legacy_infos = TRUE;
+					break;
+				}
+			}
+		}
+
+		port->priv->has_done_legacy_check = TRUE;
+	}
+
+	return length == 4 && port->priv->has_legacy_infos;
 }
 
 void
@@ -121,7 +153,8 @@ arv_gc_port_read (ArvGcPort *port, void *buffer, guint64 address, guint64 length
 
 		if (!ARV_IS_BUFFER (chunk_data_buffer)) {
 			g_set_error (error, ARV_CHUNK_PARSER_ERROR, ARV_CHUNK_PARSER_ERROR_BUFFER_NOT_FOUND,
-				     "[ArvGcPort::read] Buffer not found");
+				     "[%s] Buffer not found",
+                                     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)));
 		} else {
 			char *chunk_data;
 			size_t chunk_data_size;
@@ -134,12 +167,15 @@ arv_gc_port_read (ArvGcPort *port, void *buffer, guint64 address, guint64 length
 				memcpy (buffer, chunk_data + address, MIN (chunk_data_size - address, length));
 			} else {
 				g_set_error (error, ARV_CHUNK_PARSER_ERROR, ARV_CHUNK_PARSER_ERROR_CHUNK_NOT_FOUND,
-					     "[ArvGcPort::read] Chunk 0x%08x not found", chunk_id);
+					     "[%s] Chunk 0x%08x not found",
+                                             arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)),
+                                             chunk_id);
 			}
 		}
 	} else if (port->priv->event_id != NULL) {
 		g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_NO_EVENT_IMPLEMENTATION,
-			     "[ArvGcPort::read] Event support is not implemented");
+			     "[%s] Events not implemented",
+                             arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)));
 	} else {
 		ArvDevice *device;
 
@@ -158,7 +194,8 @@ arv_gc_port_read (ArvGcPort *port, void *buffer, guint64 address, guint64 length
 				arv_device_read_memory (device, address, length, buffer, error);
 		} else {
 			g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_NO_DEVICE_SET,
-				     "[ArvGcPort::read] No device set");
+				     "[%s] No device set",
+                                     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)));
 		}
 	}
 }
@@ -183,7 +220,8 @@ arv_gc_port_write (ArvGcPort *port, void *buffer, guint64 address, guint64 lengt
 
 		if (!ARV_IS_BUFFER (chunk_data_buffer)) {
 			g_set_error (error, ARV_CHUNK_PARSER_ERROR, ARV_CHUNK_PARSER_ERROR_BUFFER_NOT_FOUND,
-				     "[ArvGcPort::write] Buffer not found");
+				     "[%s] Buffer not found",
+                                     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)));
 		} else {
 			char *chunk_data;
 			size_t chunk_data_size;
@@ -196,12 +234,15 @@ arv_gc_port_write (ArvGcPort *port, void *buffer, guint64 address, guint64 lengt
 				memcpy (chunk_data + address, buffer, MIN (chunk_data_size - address, length));
 			} else {
 				g_set_error (error, ARV_CHUNK_PARSER_ERROR, ARV_CHUNK_PARSER_ERROR_CHUNK_NOT_FOUND,
-					     "[ArvGcPort::write] Chunk 0x%08x not found", chunk_id);
+					     "[%s] Chunk 0x%08x not found",
+                                             arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)),
+                                             chunk_id);
 			}
 		}
 	} else if (port->priv->event_id != NULL) {
 		g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_NO_EVENT_IMPLEMENTATION,
-			     "[ArvGcPort::read] Event support is not implemented");
+			     "[%s] Events  not implemented",
+                             arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)));
 	} else {
 		device = arv_gc_get_device (genicam);
 
@@ -220,7 +261,8 @@ arv_gc_port_write (ArvGcPort *port, void *buffer, guint64 address, guint64 lengt
 				arv_device_write_memory (device, address, length, buffer, error);
 		} else {
 			g_set_error (error, ARV_GC_ERROR, ARV_GC_ERROR_NO_DEVICE_SET,
-				     "[ArvGcPort::read] No device set");
+				     "[%s] No device set",
+                                     arv_gc_feature_node_get_name (ARV_GC_FEATURE_NODE (port)));
 		}
 	}
 }
@@ -240,6 +282,8 @@ arv_gc_port_init (ArvGcPort *gc_port)
 {
 	gc_port->priv = arv_gc_port_get_instance_private (gc_port);
 	gc_port->priv->chunk_id = 0;
+	gc_port->priv->has_done_legacy_check = FALSE;
+	gc_port->priv->has_legacy_infos = FALSE;
 }
 
 static void

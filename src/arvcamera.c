@@ -939,30 +939,6 @@ arv_camera_get_frame_count_bounds (ArvCamera *camera, gint64 *min, gint64 *max, 
 	arv_camera_get_integer_bounds (camera, "AcquisitionFrameCount", min, max, error);
 }
 
-static void
-arv_camera_disable_all_triggers (ArvCamera *camera, GError **error)
-{
-	GError *local_error = NULL;
-        const char **triggers = NULL;
-        guint n_triggers;
-        unsigned int i;
-
-	g_return_if_fail (ARV_IS_CAMERA (camera));
-
-        triggers = arv_camera_dup_available_enumerations_as_strings (camera, "TriggerSelector", &n_triggers,
-                                                                     &local_error);
-
-        for (i = 0; i < n_triggers && local_error == NULL; i++) {
-                arv_camera_set_string (camera, "TriggerSelector", triggers[i], &local_error);
-                if (local_error == NULL)
-                        arv_camera_set_string (camera, "TriggerMode", "Off", &local_error);
-        }
-        g_free (triggers);
-
-	if (local_error != NULL)
-		g_propagate_error (error, local_error);
-}
-
 /**
  * arv_camera_set_frame_rate:
  * @camera: a #ArvCamera
@@ -998,7 +974,7 @@ arv_camera_set_frame_rate (ArvCamera *camera, double frame_rate, GError **error)
 		return;
 	}
 
-        arv_camera_disable_all_triggers (camera, &local_error);
+	arv_camera_clear_triggers (camera, &local_error);
 	if (local_error != NULL) {
 		g_propagate_error (error, local_error);
 		return;
@@ -1249,9 +1225,7 @@ arv_camera_set_trigger (ArvCamera *camera, const char *source, GError **error)
 	gboolean has_frame_start = FALSE;
         gboolean has_frame_burst_start = FALSE; /* Hikrobot, Basler devices */
 	gboolean has_acquisition_start = FALSE; /* Smartek devices */
-        const char **triggers = NULL;
-        guint n_triggers = 0;
-        unsigned int i;
+        gboolean has_trigger_selector = FALSE;
 
 	g_return_if_fail (ARV_IS_CAMERA (camera));
 	g_return_if_fail (source != NULL);
@@ -1259,33 +1233,45 @@ arv_camera_set_trigger (ArvCamera *camera, const char *source, GError **error)
 	if (arv_camera_is_feature_available (camera, "AcquisitionFrameRateEnable", NULL))
                 arv_camera_set_boolean (camera, "AcquisitionFrameRateEnable", FALSE, &local_error);
 
-	triggers = arv_camera_dup_available_enumerations_as_strings (camera, "TriggerSelector", &n_triggers,
-								     &local_error);
+        has_trigger_selector = arv_camera_is_feature_available(camera, "TriggerSelector", &local_error);
 
-        for (i = 0; i < n_triggers && local_error == NULL; i++) {
-                arv_camera_set_string (camera, "TriggerSelector", triggers[i], &local_error);
-                if (local_error == NULL) {
-                        if (g_strcmp0 (triggers[i], "FrameStart") == 0)
-                                has_frame_start = TRUE;
-                        else if (g_strcmp0 (triggers[i], "FrameBurstStart") == 0)
-                                has_frame_burst_start = TRUE;
-                        else if (g_strcmp0 (triggers[i], "AcquisitionStart") == 0)
-                                has_acquisition_start = TRUE;
-                        arv_camera_set_string (camera, "TriggerMode", "Off", &local_error);
+        if (has_trigger_selector == TRUE) {
+                const char **triggers = NULL;
+                guint n_triggers = 0;
+                unsigned int i;
+
+                triggers = arv_camera_dup_available_enumerations_as_strings (camera, "TriggerSelector", &n_triggers,
+                                                                        &local_error);
+
+                for (i = 0; i < n_triggers && local_error == NULL; i++) {
+                        arv_camera_set_string (camera, "TriggerSelector", triggers[i], &local_error);
+                        if (local_error == NULL) {
+                                if (g_strcmp0 (triggers[i], "FrameStart") == 0)
+                                        has_frame_start = TRUE;
+                                else if (g_strcmp0 (triggers[i], "FrameBurstStart") == 0)
+                                        has_frame_burst_start = TRUE;
+                                else if (g_strcmp0 (triggers[i], "AcquisitionStart") == 0)
+                                        has_acquisition_start = TRUE;
+                                arv_camera_set_string (camera, "TriggerMode", "Off", &local_error);
+                        }
                 }
+
+                g_free (triggers);
         }
 
         if (local_error == NULL) {
-                if (has_frame_start) {
-                        arv_camera_set_string (camera, "TriggerSelector", "FrameStart", &local_error);
-                } else if (has_frame_burst_start) {
-                        arv_camera_set_string (camera, "TriggerSelector", "FrameBurstStart", &local_error);
-                } else if (has_acquisition_start) {
-                        arv_camera_set_string (camera, "TriggerSelector", "AcquisitionStart", &local_error);
-                } else {
-                        local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_FEATURE_NOT_FOUND,
-                                                   "<FrameStart> or <AcquisisitonStart> feature missing "
-                                                   "for trigger setting");
+                if (has_trigger_selector == TRUE) {
+                        if (has_frame_start) {
+                                arv_camera_set_string (camera, "TriggerSelector", "FrameStart", &local_error);
+                        } else if (has_frame_burst_start) {
+                                arv_camera_set_string (camera, "TriggerSelector", "FrameBurstStart", &local_error);
+                        } else if (has_acquisition_start) {
+                                arv_camera_set_string (camera, "TriggerSelector", "AcquisitionStart", &local_error);
+                        } else {
+                                local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_FEATURE_NOT_FOUND,
+                                                        "<FrameStart> or <AcquisisitonStart> feature missing "
+                                                        "for trigger setting");
+                        }
                 }
                 if (local_error == NULL)
                         arv_camera_set_string (camera, "TriggerMode", "On", &local_error);
@@ -1298,8 +1284,6 @@ arv_camera_set_trigger (ArvCamera *camera, const char *source, GError **error)
                 if (local_error == NULL)
                         arv_camera_set_string (camera, "TriggerSource", source, &local_error);
         }
-
-        g_free (triggers);
 
 	if (local_error != NULL)
 		g_propagate_error (error, local_error);
@@ -1394,21 +1378,23 @@ void
 arv_camera_clear_triggers (ArvCamera* camera, GError **error)
 {
 	GError *local_error = NULL;
-	const char **triggers;
-	guint n_triggers;
-	unsigned i;
 
         g_return_if_fail (ARV_IS_CAMERA (camera));
 
-	triggers = arv_camera_dup_available_triggers (camera, &n_triggers, &local_error);
+        if (arv_camera_is_feature_available(camera, "TriggerSelector", &local_error)) {
+                const char **triggers;
+                guint n_triggers;
+                unsigned i;
+                triggers = arv_camera_dup_available_triggers (camera, &n_triggers, &local_error);
+                for (i = 0; i < n_triggers && local_error == NULL; i++) {
+                        arv_camera_set_string (camera, "TriggerSelector", triggers[i], &local_error);
+                        if (local_error == NULL)
+                                arv_camera_set_string (camera, "TriggerMode", "Off", &local_error);
+                }
 
-	for (i = 0; i < n_triggers && local_error == NULL; i++) {
-		arv_camera_set_string (camera, "TriggerSelector", triggers[i], &local_error);
-		if (local_error == NULL)
-			arv_camera_set_string (camera, "TriggerMode", "Off", &local_error);
-	}
-
-	g_free (triggers);
+                g_free (triggers);
+        } else
+                arv_camera_set_string (camera, "TriggerMode", "Off", &local_error);
 
 	if (local_error != NULL)
 		g_propagate_error (error, local_error);
@@ -2673,7 +2659,8 @@ arv_camera_set_register_cache_policy (ArvCamera *camera, ArvRegisterCachePolicy 
  * Since: 0.8.8
  */
 
-void arv_camera_set_range_check_policy	(ArvCamera *camera, ArvRangeCheckPolicy policy)
+void
+arv_camera_set_range_check_policy (ArvCamera *camera, ArvRangeCheckPolicy policy)
 {
 	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
 
@@ -2681,6 +2668,31 @@ void arv_camera_set_range_check_policy	(ArvCamera *camera, ArvRangeCheckPolicy p
 
 	arv_device_set_range_check_policy (priv->device, policy);
 }
+
+/**
+ * arv_camera_set_access_check_policy:
+ * @camera: a #ArvCamera
+ * @policy: access check policy
+ *
+ * Sets the feature access check policy. When enabled, before being accessed, the actual read/write access of register
+ * is checked using AccessMode properties. On some devices, it helps to avoid forbidden writes to registers that may put
+ * the device in a bad state.
+ *
+ * <warning><para>Access check is disabled by default.</para></warning>
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_camera_set_access_check_policy (ArvCamera *camera, ArvAccessCheckPolicy policy)
+{
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+
+	g_return_if_fail (ARV_IS_CAMERA (camera));
+
+	arv_device_set_access_check_policy (priv->device, policy);
+}
+
 
 
 /**
@@ -2989,6 +3001,155 @@ arv_camera_gv_set_packet_size_adjustment (ArvCamera *camera, ArvGvPacketSizeAdju
 	g_return_if_fail (arv_camera_is_gv_device (camera));
 
 	arv_gv_device_set_packet_size_adjustment (ARV_GV_DEVICE (priv->device), adjustment);
+}
+
+/**
+ * arv_camera_gv_get_persistent_ip:
+ * @camera: a #ArvCamera
+ * @ip: (out): a IP address placeholder
+ * @mask: (out) (optional): a netmask placeholder, %NULL to ignore
+ * @gateway: (out) (optional): a gateway IP address placeholder, %NULL to ignore
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Get the persistent IP address setting of camera.
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_camera_gv_get_persistent_ip (ArvCamera *camera,
+                                 GInetAddress **ip, GInetAddressMask **mask, GInetAddress **gateway,
+                                 GError **error)
+{
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+
+	g_return_if_fail (arv_camera_is_gv_device (camera));
+
+	arv_gv_device_get_persistent_ip (ARV_GV_DEVICE (priv->device), ip, mask, gateway, error);
+}
+
+/**
+ * arv_camera_gv_set_persistent_ip_from_string:
+ * @camera: a #ArvCamera
+ * @ip: IPv4 address in string format
+ * @mask: netmask in string format
+ * @gateway: Gateway IPv4 address in string format
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Sets the persistent IP address to camera.
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_camera_gv_set_persistent_ip_from_string (ArvCamera *camera,
+                                             const char *ip, const char *mask, const char *gateway,
+                                             GError **error)
+{
+	GError *local_error = NULL;
+	GInetAddress *ip_gi;
+	GInetAddressMask *mask_gi;
+	GInetAddress *gateway_gi;
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+
+	g_return_if_fail (arv_camera_is_gv_device (camera));
+
+	ip_gi = g_inet_address_new_from_string (ip);
+	mask_gi = g_inet_address_mask_new_from_string (mask, NULL);
+	gateway_gi = g_inet_address_new_from_string (gateway);
+
+	if (ip_gi == NULL) {
+		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                           "IP address could not be parsed: \"%s\"", ip);
+	}else if (mask_gi == NULL) {
+		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                           "Netmask could not be parsed: \"%s\"", mask);
+	}else if (gateway_gi == NULL) {
+		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                           "Gateway address could not be parsed: \"%s\"", gateway);
+	}
+	if (local_error != NULL){
+		g_propagate_error (error, local_error);
+		g_clear_object (&ip_gi);
+		g_clear_object (&mask_gi);
+		g_clear_object (&gateway_gi);
+		return;
+	}
+
+	arv_gv_device_set_persistent_ip (ARV_GV_DEVICE (priv->device), ip_gi, mask_gi, gateway_gi, error);
+	g_object_unref (ip_gi);
+	g_object_unref (mask_gi);
+	g_object_unref (gateway_gi);
+}
+
+/**
+ * arv_camera_gv_set_persistent_ip:
+ * @camera: a #ArvCamera
+ * @ip: IPv4 address
+ * @mask: Netmask
+ * @gateway: Gateway IPv4 address
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Sets the persistent IP address to camera.
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_camera_gv_set_persistent_ip (ArvCamera *camera,
+                                 GInetAddress *ip, GInetAddressMask *mask, GInetAddress *gateway,
+                                 GError **error)
+{
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+
+	g_return_if_fail (arv_camera_is_gv_device (camera));
+
+	arv_gv_device_set_persistent_ip (ARV_GV_DEVICE (priv->device), ip, mask, gateway, error);
+}
+
+/**
+ * arv_camera_gv_get_ip_configuration_mode:
+ * @camera: a #ArvCamera
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Get the IP address configuration mode.
+ *
+ * Returns: IP address configuration mode
+ *
+ * Since: 0.8.22
+ */
+
+ArvGvIpConfigurationMode
+arv_camera_gv_get_ip_configuration_mode(ArvCamera *camera, GError **error)
+{
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+
+	g_return_val_if_fail (arv_camera_is_gv_device (camera), 0);
+
+	return arv_gv_device_get_ip_configuration_mode (ARV_GV_DEVICE (priv->device), error);
+}
+
+/**
+ * arv_camera_gv_set_ip_configuration_mode:
+ * @camera: a #ArvCamera
+ * @mode: IP address configuration mode
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Sets the IP address configuration mode.
+ * Available modes are ARV_GV_IP_CONFIGURATION_MODE_DHCP, ARV_GV_IP_CONFIGURATION_MODE_PERSISTENT_IP,
+ * ARV_GV_IP_CONFIGURATION_MODE_LLA
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_camera_gv_set_ip_configuration_mode (ArvCamera *camera, ArvGvIpConfigurationMode mode, GError **error)
+{
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+
+	g_return_if_fail (arv_camera_is_gv_device (camera));
+
+	arv_gv_device_set_ip_configuration_mode (ARV_GV_DEVICE (priv->device), mode, error);
 }
 
 /**

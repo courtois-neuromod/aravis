@@ -58,6 +58,8 @@ typedef struct {
 	libusb_context *usb;
 	libusb_device_handle *usb_device;
 
+       	libusb_hotplug_callback_handle hotplug_cb_handle;
+
 	ArvGc *genicam;
 
 	char *genicam_xml;
@@ -78,6 +80,8 @@ typedef struct {
 
 	int event_thread_run;
 	GThread* event_thread;
+
+        GMutex transfer_mutex;
 } ArvUvDevicePrivate;
 
 struct _ArvUvDevice {
@@ -94,18 +98,28 @@ G_DEFINE_TYPE_WITH_CODE (ArvUvDevice, arv_uv_device, ARV_TYPE_DEVICE, G_ADD_PRIV
 
 /* ArvUvDevice implementation */
 
-void arv_uv_device_fill_bulk_transfer (struct libusb_transfer* transfer, ArvUvDevice *uv_device,
-				ArvUvEndpointType endpoint_type, unsigned char endpoint_flags,
-				void *data, size_t size,
-				libusb_transfer_cb_fn callback, void* callback_data,
-				unsigned int timeout)
+gboolean
+arv_uv_device_is_connected (ArvUvDevice *uv_device)
 {
-	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
-	guint8 endpoint;
+        ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
+
+        return !priv->disconnected;
+}
+
+void
+arv_uv_device_fill_bulk_transfer (struct libusb_transfer* transfer, ArvUvDevice *uv_device,
+                                  ArvUvEndpointType endpoint_type, unsigned char endpoint_flags,
+                                  void *data, size_t size,
+                                  libusb_transfer_cb_fn callback, void* callback_data,
+                                  unsigned int timeout)
+{
+        ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
+        guint8 endpoint;
 
 	endpoint = (endpoint_type == ARV_UV_ENDPOINT_CONTROL) ? priv->control_endpoint : priv->data_endpoint;
 
-	libusb_fill_bulk_transfer( transfer, priv->usb_device, endpoint | endpoint_flags, data, size, callback, callback_data, timeout );
+        libusb_fill_bulk_transfer (transfer, priv->usb_device, endpoint | endpoint_flags, data, size,
+                                   callback, callback_data, timeout );
 }
 
 gboolean
@@ -143,9 +157,11 @@ arv_uv_device_bulk_transfer (ArvUvDevice *uv_device, ArvUvEndpointType endpoint_
 		*transferred_size = transferred;
 
 	if (result == LIBUSB_ERROR_NO_DEVICE) {
-		priv->disconnected = TRUE;
-		arv_device_emit_control_lost_signal (ARV_DEVICE (uv_device));
-	}
+                if (!priv->disconnected) {
+                        priv->disconnected = TRUE;
+                        arv_device_emit_control_lost_signal (ARV_DEVICE (uv_device));
+                }
+        }
 
 	return success;
 }
@@ -171,7 +187,6 @@ _send_cmd_and_receive_ack (ArvUvDevice *uv_device, ArvUvcpCommand command,
 	unsigned n_tries = 0;
 	gboolean success = FALSE;
 	ArvUvcpStatus status = ARV_UVCP_STATUS_SUCCESS;
-	static GMutex transfer_mutex;
 
 	switch (command) {
 		case ARV_UVCP_COMMAND_READ_MEMORY_CMD:
@@ -225,7 +240,7 @@ _send_cmd_and_receive_ack (ArvUvDevice *uv_device, ArvUvcpCommand command,
 
 	ack_packet = g_malloc (ack_size);
 
-	g_mutex_lock(&transfer_mutex);
+	g_mutex_lock (&priv->transfer_mutex);
 
 	do {
 		GError *local_error = NULL;
@@ -335,7 +350,7 @@ _send_cmd_and_receive_ack (ArvUvDevice *uv_device, ArvUvcpCommand command,
 		n_tries++;
 	} while (!success && n_tries < ARV_UV_DEVICE_N_TRIES_MAX);
 
-	g_mutex_unlock(&transfer_mutex);
+	g_mutex_unlock (&priv->transfer_mutex);
 
 	g_free (ack_packet);
 	arv_uvcp_packet_free (packet);
@@ -870,6 +885,23 @@ arv_uv_device_new_from_guid (const char *guid, GError **error)
 			       NULL);
 }
 
+static int _disconnect_event (libusb_context *ctx,
+                              libusb_device *device,
+                              libusb_hotplug_event event,
+                              void *user_data)
+{
+	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (ARV_UV_DEVICE (user_data));
+
+        if (device == libusb_get_device (priv->usb_device)) {
+                if (!priv->disconnected) {
+                        priv->disconnected = TRUE;
+                        arv_device_emit_control_lost_signal (ARV_DEVICE (user_data));
+                }
+        }
+
+        return 0;
+}
+
 static void
 arv_uv_device_constructed (GObject *object)
 {
@@ -879,6 +911,8 @@ arv_uv_device_constructed (GObject *object)
         int result;
 
         G_OBJECT_CLASS (arv_uv_device_parent_class)->constructed (object);
+
+        g_mutex_init (&priv->transfer_mutex);
 
         if (priv->vendor != NULL)
                 arv_info_device ("[UvDevice::new] Vendor  = %s", priv->vendor);
@@ -941,6 +975,14 @@ arv_uv_device_constructed (GObject *object)
 
         reset_endpoint (priv->usb_device, priv->data_endpoint, LIBUSB_ENDPOINT_IN);
 
+        libusb_hotplug_register_callback (priv->usb, LIBUSB_HOTPLUG_EVENT_DEVICE_LEFT, 0,
+                                          LIBUSB_HOTPLUG_MATCH_ANY,
+                                          LIBUSB_HOTPLUG_MATCH_ANY,
+                                          LIBUSB_HOTPLUG_MATCH_ANY,
+                                          _disconnect_event,
+                                          uv_device,
+                                          &priv->hotplug_cb_handle);
+
 	priv->usb_mode = ARV_UV_USB_MODE_DEFAULT;
 
 	priv->event_thread_run = 1;
@@ -964,8 +1006,10 @@ arv_uv_device_finalize (GObject *object)
 
 	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (uv_device);
 
+        libusb_hotplug_deregister_callback (priv->usb, priv->hotplug_cb_handle);
+
 	priv->event_thread_run = 0;
-	g_thread_join( priv->event_thread );
+	g_thread_join (priv->event_thread);
 
 	g_clear_object (&priv->genicam);
 
@@ -980,6 +1024,7 @@ arv_uv_device_finalize (GObject *object)
 		libusb_close (priv->usb_device);
 	}
 	libusb_exit (priv->usb);
+        g_mutex_clear (&priv->transfer_mutex);
 
 	G_OBJECT_CLASS (arv_uv_device_parent_class)->finalize (object);
 }

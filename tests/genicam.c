@@ -77,6 +77,7 @@ integer_test (void)
 	GError *error = NULL;
 	gint64 v_int64;
 	const char *v_string;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -87,6 +88,9 @@ integer_test (void)
 
 	node = arv_gc_get_node (genicam, "RWInteger");
 	g_assert (ARV_IS_GC_INTEGER_NODE (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_int64 = arv_gc_integer_get_value (ARV_GC_INTEGER (node), NULL);
 	g_assert_cmpint (v_int64, ==, 1);
@@ -109,6 +113,9 @@ integer_test (void)
 
 	node = arv_gc_get_node (genicam, "P_RWInteger");
 	g_assert (ARV_IS_GC_INTEGER_NODE (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_int64 = arv_gc_integer_get_value (ARV_GC_INTEGER (node), NULL);
 	g_assert_cmpint (v_int64, ==, 2);
@@ -273,6 +280,7 @@ boolean_test (void)
 	GError *error = NULL;
 	gboolean v_boolean;
 	const char *v_string;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -283,6 +291,9 @@ boolean_test (void)
 
 	node = arv_gc_get_node (genicam, "RWBoolean");
 	g_assert (ARV_IS_GC_BOOLEAN (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_boolean = arv_gc_boolean_get_value (ARV_GC_BOOLEAN (node), NULL);
 	g_assert_cmpint (v_boolean, ==, TRUE);
@@ -299,6 +310,9 @@ boolean_test (void)
 
 	node = arv_gc_get_node (genicam, "P_RWBoolean");
 	g_assert (ARV_IS_GC_BOOLEAN (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_boolean = arv_gc_boolean_get_value (ARV_GC_BOOLEAN (node), NULL);
 	g_assert_cmpint (v_boolean, ==, TRUE);
@@ -323,6 +337,7 @@ float_test (void)
 	GError *error = NULL;
 	double v_double;
 	const char *v_string;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -333,6 +348,9 @@ float_test (void)
 
 	node = arv_gc_get_node (genicam, "RWFloat");
 	g_assert (ARV_IS_GC_FLOAT_NODE (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_double = arv_gc_float_get_value (ARV_GC_FLOAT (node), NULL);
 	g_assert_cmpfloat (v_double, ==, 0.1);
@@ -355,6 +373,9 @@ float_test (void)
 
 	node = arv_gc_get_node (genicam, "P_RWFloat");
 	g_assert (ARV_IS_GC_FLOAT_NODE (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_double = arv_gc_float_get_value (ARV_GC_FLOAT (node), NULL);
 	g_assert_cmpfloat (v_double, ==, 0.2);
@@ -382,6 +403,7 @@ enumeration_test (void)
 	gint64 *values;
 	guint n_values;
 	const char *v_string;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -394,6 +416,9 @@ enumeration_test (void)
 	g_assert (ARV_IS_GC_ENUMERATION (node));
 	g_assert (ARV_IS_GC_INTEGER (node));
 	g_assert (ARV_IS_GC_STRING (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_int64 = arv_gc_enumeration_get_int_value (ARV_GC_ENUMERATION (node), NULL);
 	g_assert_cmpint (v_int64, ==, 0);
@@ -436,6 +461,7 @@ swiss_knife_test (void)
 	ArvGcNode *node;
 	GError *error = NULL;
 	gint64 value;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -446,6 +472,9 @@ swiss_knife_test (void)
 
 	node = arv_gc_get_node (genicam, "IntSwissKnifeTest");
 	g_assert (ARV_IS_GC_SWISS_KNIFE (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RO);
 
 	value = arv_gc_integer_get_value (ARV_GC_INTEGER (node), NULL);
 	g_assert_cmpint (value, ==, 0x1234);
@@ -486,6 +515,7 @@ converter_test (void)
 	GError *error = NULL;
 	double v_double;
 	gint64 v_int64;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -494,8 +524,17 @@ converter_test (void)
 	genicam = arv_device_get_genicam (device);
 	g_assert (ARV_IS_GC (genicam));
 
+	node = arv_gc_get_node (genicam, "ROConverter");
+	g_assert (ARV_IS_GC_CONVERTER (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RO);
+
 	node = arv_gc_get_node (genicam, "Converter");
 	g_assert (ARV_IS_GC_CONVERTER (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_double = arv_gc_float_get_value (ARV_GC_FLOAT (node), NULL);
 	g_assert_cmpfloat (v_double, ==, 200.0);
@@ -506,6 +545,9 @@ converter_test (void)
 
 	node = arv_gc_get_node (genicam, "IntConverter");
 	g_assert (ARV_IS_GC_CONVERTER (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_int64 = arv_gc_integer_get_value (ARV_GC_INTEGER (node), NULL);
 	g_assert_cmpint (v_int64, ==, 5);
@@ -523,8 +565,14 @@ converter_test (void)
 	v_double = arv_gc_float_get_value (ARV_GC_FLOAT (node), NULL);
 	g_assert_cmpint (v_double, ==, 5);
 
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
+
 	node = arv_gc_get_node (genicam, "IntConverterTestSubAndConstant");
 	g_assert (ARV_IS_GC_CONVERTER (node));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	v_int64 = arv_gc_integer_get_value (ARV_GC_INTEGER (node), NULL);
 	g_assert_cmpint (v_int64, ==, 10000);
@@ -549,6 +597,7 @@ register_test (void)
 	ArvGcNode *node_uc;
 	ArvGcNode *node_f;
 	ArvGcNode *node_str;
+        ArvGcAccessMode access_mode;
 	const char *string;
 	gint64 value;
 	double value_f;
@@ -562,6 +611,12 @@ register_test (void)
 
 	/* 64 bit IntReg */
 
+	node_a = arv_gc_get_node (genicam, "ROIntRegisterA");
+	g_assert (ARV_IS_GC_REGISTER (node_a));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_a));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RO);
+
 	node_a = arv_gc_get_node (genicam, "IntRegisterA");
 	g_assert (ARV_IS_GC_REGISTER (node_a));
 	value = arv_gc_integer_get_min (ARV_GC_INTEGER (node_a), NULL);
@@ -571,11 +626,17 @@ register_test (void)
 	string = arv_gc_integer_get_unit (ARV_GC_INTEGER (node_a));
 	g_assert_cmpstr (string, ==, "Pa");
 
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_a));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
+
 	value = arv_gc_register_get_address (ARV_GC_REGISTER (node_a), NULL);
 	g_assert_cmpint (value, ==, 0x1050);
 
 	node_b = arv_gc_get_node (genicam, "IntRegisterB");
 	g_assert (ARV_IS_GC_REGISTER (node_b));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_b));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	value = arv_gc_register_get_address (ARV_GC_REGISTER (node_b), NULL);
 	g_assert_cmpint (value, ==, 0x20ff);
@@ -596,6 +657,9 @@ register_test (void)
 	value = arv_gc_integer_get_inc (ARV_GC_INTEGER (node_sc), NULL);
 	g_assert_cmpint (value, ==, 1);
 
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_sc));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
+
 	node_uc = arv_gc_get_node (genicam, "IntUnsigned32BitRegisterC");
 	g_assert (ARV_IS_GC_REGISTER (node_uc));
 	value = arv_gc_integer_get_min (ARV_GC_INTEGER (node_uc), NULL);
@@ -604,6 +668,9 @@ register_test (void)
 	g_assert_cmpint (value, ==, G_MAXUINT32);
 	value = arv_gc_integer_get_inc (ARV_GC_INTEGER (node_uc), NULL);
 	g_assert_cmpint (value, ==, 1);
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_uc));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	arv_gc_integer_set_value (ARV_GC_INTEGER (node_sc), -1, NULL);
 
@@ -632,6 +699,9 @@ register_test (void)
 	value = arv_gc_integer_get_inc (ARV_GC_INTEGER (node_sc), NULL);
 	g_assert_cmpint (value, ==, 1);
 
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_sc));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
+
 	node_uc = arv_gc_get_node (genicam, "IntUnsigned16BitRegisterC");
 	g_assert (ARV_IS_GC_REGISTER (node_uc));
 	value = arv_gc_integer_get_min (ARV_GC_INTEGER (node_uc), NULL);
@@ -640,6 +710,9 @@ register_test (void)
 	g_assert_cmpint (value, ==, G_MAXUINT16);
 	value = arv_gc_integer_get_inc (ARV_GC_INTEGER (node_uc), NULL);
 	g_assert_cmpint (value, ==, 1);
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_uc));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	arv_gc_integer_set_value (ARV_GC_INTEGER (node_sc), -1, NULL);
 
@@ -665,6 +738,9 @@ register_test (void)
 	string = arv_gc_integer_get_unit (ARV_GC_INTEGER (node_sc));
 	g_assert_cmpstr (string, ==, "V");
 
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_sc));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
+
 	node_uc = arv_gc_get_node (genicam, "MaskedIntUnsignedRegisterC");
 	g_assert (ARV_IS_GC_REGISTER (node_uc));
 	value = arv_gc_integer_get_min (ARV_GC_INTEGER (node_uc), NULL);
@@ -675,6 +751,9 @@ register_test (void)
 	g_assert_cmpint (value, ==, 1);
 	string = arv_gc_integer_get_unit (ARV_GC_INTEGER (node_uc));
 	g_assert_cmpstr (string, ==, "A");
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_uc));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	/* 4 byte FLoatReg */
 
@@ -688,6 +767,9 @@ register_test (void)
 	g_assert_cmpfloat (value_f, ==, G_MAXFLOAT);
 	string = arv_gc_float_get_unit (ARV_GC_FLOAT (node_f));
 	g_assert_cmpstr (string, ==, "mA");
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_f));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	arv_gc_float_set_value (ARV_GC_FLOAT (node_f), 2.0, NULL);
 	value_f = arv_gc_float_get_value (ARV_GC_FLOAT (node_f), NULL);
@@ -710,6 +792,9 @@ register_test (void)
 	string = arv_gc_float_get_unit (ARV_GC_FLOAT (node_f));
 	g_assert_cmpstr (string, ==, "mV");
 
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_f));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
+
 	arv_gc_float_set_value (ARV_GC_FLOAT (node_f), 1.2, NULL);
 	value_f = arv_gc_float_get_value (ARV_GC_FLOAT (node_f), NULL);
 	g_assert_cmpfloat (value_f, ==, 1.2);
@@ -728,6 +813,9 @@ register_test (void)
 	g_assert (ARV_IS_GC_REGISTER (node_str));
 	value = arv_gc_string_get_max_length (ARV_GC_STRING (node_str), NULL);
 	g_assert_cmpint (value, ==, 4);
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_str));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	arv_gc_string_set_value (ARV_GC_STRING (node_str), "Toto", NULL);
 	string = arv_gc_string_get_value (ARV_GC_STRING (node_str), NULL);
@@ -752,6 +840,7 @@ string_test (void)
 	ArvGcNode *node_str;
 	gint64 value;
 	const char *str;
+        ArvGcAccessMode access_mode;
 
 	device = arv_fake_device_new ("TEST0", &error);
 	g_assert (ARV_IS_FAKE_DEVICE (device));
@@ -762,6 +851,9 @@ string_test (void)
 
 	node_str = arv_gc_get_node (genicam, "StringNodeA");
 	g_assert (ARV_IS_GC_STRING (node_str));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_str));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	value = arv_gc_string_get_max_length (ARV_GC_STRING (node_str), &error);
 	g_assert_cmpint (value, ==, 4);
@@ -780,6 +872,9 @@ string_test (void)
 
 	node_str = arv_gc_get_node (genicam, "StringNodeB");
 	g_assert (ARV_IS_GC_STRING (node_str));
+
+        access_mode = arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (node_str));
+        g_assert_cmpint (access_mode, ==, ARV_GC_ACCESS_MODE_RW);
 
 	value = arv_gc_string_get_max_length (ARV_GC_STRING (node_str), &error);
 	g_assert_cmpint (value, ==, G_MAXINT64);
@@ -917,8 +1012,7 @@ create_buffer_with_chunk_data (void)
 	guint32 *int_value;
 	guint8 *boolean_value;
 	guint offset;
-	double float_value;
-	int i;
+	guint64 *float_value;
 
 	size = 64 + 8 + 64 + 8 + 1 + 5 * sizeof (ArvChunkInfos);
 
@@ -949,9 +1043,8 @@ create_buffer_with_chunk_data (void)
 	chunk_infos->id = GUINT32_TO_BE (0x12345679);
 	chunk_infos->size = GUINT32_TO_BE (8);
 
-	float_value = 1.1;
-	for (i = 0; i < sizeof (float_value); i++)
-		data[offset - i - 1] = ((char *) &float_value)[i];
+        float_value = (guint64 *) &data[offset - 8];
+	*float_value = GUINT64_TO_BE (0x3FF199999999999A); /* Hexadecimal representation of 1.1 as double */
 
 	offset -= 8 + sizeof (ArvChunkInfos);
 	chunk_infos = (ArvChunkInfos *) &data[offset];
@@ -1099,6 +1192,95 @@ visibility_test (void)
 	g_object_unref (device);
 }
 
+static void
+category_test (void)
+{
+	ArvDevice *device;
+	ArvGc *genicam;
+	ArvGcNode *node;
+	GError *error = NULL;
+        const GSList *features;
+
+	device = arv_fake_device_new ("TEST0", &error);
+	g_assert (ARV_IS_FAKE_DEVICE (device));
+	g_assert (error == NULL);
+
+	genicam = arv_device_get_genicam (device);
+	g_assert (ARV_IS_GC (genicam));
+
+	node = arv_gc_get_node (genicam, "Root");
+	g_assert (ARV_IS_GC_FEATURE_NODE (node));
+        g_assert (ARV_IS_GC_CATEGORY (node));
+
+        g_assert_cmpstr (arv_gc_feature_node_get_description (ARV_GC_FEATURE_NODE (node)), ==, "description");
+        g_assert_cmpstr (arv_gc_feature_node_get_tooltip (ARV_GC_FEATURE_NODE (node)), ==, "tooltip");
+        g_assert_cmpstr (arv_gc_feature_node_get_display_name (ARV_GC_FEATURE_NODE (node)), ==, "display_name");
+
+        features = arv_gc_category_get_features (ARV_GC_CATEGORY (node));
+
+        g_assert_cmpint (g_slist_length ((GSList *) features), ==, 8);
+
+	g_object_unref (device);
+}
+
+static void
+lock_test (void)
+{
+	ArvDevice *device;
+	ArvGc *genicam;
+	ArvGcNode *node;
+	ArvGcNode *lock;
+	GError *error = NULL;
+
+	device = arv_fake_device_new ("TEST0", &error);
+	g_assert (ARV_IS_FAKE_DEVICE (device));
+	g_assert (error == NULL);
+
+	genicam = arv_device_get_genicam (device);
+	g_assert (ARV_IS_GC (genicam));
+
+	node = arv_gc_get_node (genicam, "LockedByInteger");
+	g_assert (ARV_IS_GC_INTEGER_NODE (node));
+        lock = arv_gc_get_node (genicam, "IntegerLock");
+	g_assert (ARV_IS_GC_INTEGER (lock));
+
+        g_assert (!arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+        g_assert (error == NULL);
+
+        arv_gc_integer_set_value (ARV_GC_INTEGER (lock), 10, &error);
+        g_assert (arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+        g_assert (error == NULL);
+
+	node = arv_gc_get_node (genicam, "LockedByFloat");
+	g_assert (ARV_IS_GC_INTEGER_NODE (node));
+        lock = arv_gc_get_node (genicam, "FloatLock");
+	g_assert (ARV_IS_GC_FLOAT (lock));
+
+        g_assert (!arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+        g_assert (error == NULL);
+
+        arv_gc_float_set_value (ARV_GC_FLOAT (lock), 10.0, &error);
+        g_assert (arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+        g_assert (error == NULL);
+
+	node = arv_gc_get_node (genicam, "LockedByBoolean");
+	g_assert (ARV_IS_GC_INTEGER_NODE (node));
+        lock = arv_gc_get_node (genicam, "BooleanLock");
+	g_assert (ARV_IS_GC_BOOLEAN (lock));
+
+        g_assert (!arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+        g_assert (error == NULL);
+
+        arv_gc_boolean_set_value (ARV_GC_BOOLEAN (lock), TRUE, &error);
+        g_assert (arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+        g_assert (error == NULL);
+
+	node = arv_gc_get_node (genicam, "NoLock");
+	g_assert (ARV_IS_GC_INTEGER_NODE (node));
+        g_assert (!arv_gc_feature_node_is_locked (ARV_GC_FEATURE_NODE (node), &error));
+
+	g_object_unref (device);
+}
 int
 main (int argc, char *argv[])
 {
@@ -1122,6 +1304,8 @@ main (int argc, char *argv[])
 	g_test_add_func ("/genicam/chunk-data", chunk_data_test);
 	g_test_add_func ("/genicam/indexed", indexed_test);
 	g_test_add_func ("/genicam/visibility", visibility_test);
+	g_test_add_func ("/genicam/category", category_test);
+	g_test_add_func ("/genicam/lock", lock_test);
 
 	result = g_test_run();
 
