@@ -534,7 +534,7 @@ double x_pos, y_pos, pupil = 30, x_speed=0, y_speed=0, pupil_speed=0, x_acc=0, y
 			y_pos = height / 2;
 		}
 
-		if (buffer->priv->frame_id % 500 == 0){
+		if (buffer->priv->frame_id % 250 == 0){
 			x_acc = (g_random_double()-x_pos/width)*.001;
 			y_acc = (g_random_double()-y_pos/height)*.001;
 			pupil_acc = (g_random_double()-pupil/20-.5)*.001;
@@ -551,7 +551,7 @@ double x_pos, y_pos, pupil = 30, x_speed=0, y_speed=0, pupil_speed=0, x_acc=0, y
 		pupil += pupil_speed;
 
 		if(pupil<20){
-			pupil = 10;
+			pupil = 20;
 			pupil_speed = 0;
 			pupil_acc = .0001;
 		} else if (pupil > 50){
