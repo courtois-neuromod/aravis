@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 #ifndef ARV_STREAM_H
@@ -40,7 +40,8 @@ G_BEGIN_DECLS
  * @ARV_STREAM_CALLBACK_TYPE_START_BUFFER: buffer filling start, happens at each frame
  * @ARV_STREAM_CALLBACK_TYPE_BUFFER_DONE: buffer filled, happens at each frame
  *
- * Describes when the stream callback is called.
+ * Describes when the reason the stream callback is called. You are probably more interested in
+ * @ARV_STREAM_CALLBACK_TYPE_INIT and @ARV_STREAM_CALLBACK_TYPE_BUFFER_DONE.
  */
 
 typedef enum {
@@ -66,6 +67,25 @@ struct _ArvStreamClass {
 	/* signals */
 	void        	(*new_buffer)   	(ArvStream *stream);
 };
+
+/**
+ * ArvStreamCallback:
+ * @user_data: a pointer to user data associated to this callback
+ * @type: reason of the callback call
+ * @buffer: a [class@ArvBuffer] object
+ *
+ * This is the signature of the callback passed on an #ArvStream instantiation, which will be called on the stream
+ * receiving thread initialization and finalization, and on every received buffer, once when the buffer is pulled from
+ * the buffer queue, and one more when the buffer is done (successfully or not).
+ *
+ * @buffer is assured to be a valid #ArvBuffer object only when type is @ARV_STREAM_CALLBACK_TYPE_START_BUFFER or
+ * @ARV_STREAM_CALLBACK_TYPE_BUFFER_DONE.
+ *
+ * The callback is awaken from the stream receiving thread, which means it is forbidden to access to the camera
+ * instance, except if you take care to protect the instance access from concurrent access. It also means all the time
+ * spent in the callback is less time available for the incoming data handling. CPU intensive image processing should
+ * happen elsewhere.
+ */
 
 typedef void (*ArvStreamCallback)	(void *user_data, ArvStreamCallbackType type, ArvBuffer *buffer);
 

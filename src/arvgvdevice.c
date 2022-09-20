@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -788,12 +788,64 @@ arv_gv_device_set_packet_size_adjustment (ArvGvDevice *gv_device, ArvGvPacketSiz
 }
 
 /**
+ * arv_gv_device_get_current_ip:
+ * @gv_device: a #ArvGvDevice
+ * @ip: (out): a IP address placeholder
+ * @mask: (out) (optional): a netmask placeholder
+ * @gateway: (out) (optional): a gateway IP address placeholder
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Get the current IP address setting of device.
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_gv_device_get_current_ip (ArvGvDevice *gv_device,
+                              GInetAddress **ip, GInetAddressMask **mask, GInetAddress **gateway,
+                              GError **error)
+{
+	guint32 be_ip_int;
+	guint32 be_mask_int;
+	guint32 be_gateway_int;
+	guint32 value;
+	GInetAddress *netmask;
+
+	g_return_if_fail (ARV_IS_GV_DEVICE (gv_device));
+	g_return_if_fail (ip != NULL);
+
+	value = arv_device_get_integer_feature_value (ARV_DEVICE (gv_device),
+                                                      "GevCurrentIPAddress", NULL);
+	be_ip_int = g_htonl(value);
+
+	*ip = g_inet_address_new_from_bytes ((guint8 *) &be_ip_int, G_SOCKET_FAMILY_IPV4);
+
+	if (mask != NULL) {
+		value = arv_device_get_integer_feature_value (ARV_DEVICE (gv_device),
+                                                              "GevCurrentSubnetMask", NULL);
+		be_mask_int = g_htonl(value);
+
+		netmask = g_inet_address_new_from_bytes ((guint8 *) &be_mask_int, G_SOCKET_FAMILY_IPV4);
+		*mask = g_inet_address_mask_new (netmask, 32, NULL);
+		g_object_unref (netmask);
+	}
+
+	if (gateway != NULL) {
+		value = arv_device_get_integer_feature_value (ARV_DEVICE (gv_device),
+                                                              "GevCurrentDefaultGateway", NULL);
+		be_gateway_int = g_htonl(value);
+
+		*gateway = g_inet_address_new_from_bytes ((guint8 *) &be_gateway_int, G_SOCKET_FAMILY_IPV4);
+	}
+}
+
+/**
  * arv_gv_device_get_persistent_ip:
  * @gv_device: a #ArvGvDevice
  * @ip: (out): a IP address placeholder
- * @mask: (out) (optional): a netmask placeholder, %NULL to ignore
- * @gateway: (out) (optional): a gateway IP address placeholder, %NULL to ignore
- * @error: a #GError placeholder, %NULL to ignore
+ * @mask: (out) (optional): a netmask placeholder
+ * @gateway: (out) (optional): a gateway IP address placeholder
+ * @error: a #GError placeholder
  *
  * Get the persistent IP address setting of device.
  *
@@ -842,10 +894,10 @@ arv_gv_device_get_persistent_ip (ArvGvDevice *gv_device,
 /**
  * arv_gv_device_set_persistent_ip:
  * @gv_device: a #ArvGvDevice
- * @ip: IPv4 address
- * @mask: Netmask
- * @gateway: Gateway IPv4 address
- * @error: a #GError placeholder, %NULL to ignore
+ * @ip: (nullable): IPv4 address
+ * @mask: (nullable): Netmask
+ * @gateway: (nullable): Gateway IPv4 address
+ * @error: a #GError placeholder
  *
  * Sets the persistent IP address to device.
  * Also disable DHCP then enable persistent IP mode.
@@ -858,61 +910,146 @@ arv_gv_device_set_persistent_ip (ArvGvDevice *gv_device,
                                  GInetAddress *ip, GInetAddressMask *mask, GInetAddress *gateway,
                                  GError **error)
 {
-	const guint8 *ip_bytes;
-	guint mask_length;
-	const guint8 *gateway_bytes;
-	guint32 ip_int;
-	guint32 mask_int;
-	guint32 gateway_int;
-	guint32 be_value;
-	const guint8 *mask_bytes;
+	g_return_if_fail (ARV_IS_GV_DEVICE (gv_device));
+
+	if (G_IS_INET_ADDRESS (ip)) {
+		GError *local_error = NULL;
+		const guint8 *ip_bytes;
+		guint32 be_value;
+		guint32 ip_int;
+
+		/* GigEVision specification does not support IPv6 */
+		if (g_inet_address_get_family (ip) != G_SOCKET_FAMILY_IPV4) {
+			g_set_error (error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+						"IP address is not IPv4 address");
+			return;
+		}
+
+		ip_bytes = g_inet_address_to_bytes (ip);
+		be_value = ((guint32)ip_bytes[3] << 24) | (ip_bytes[2] << 16) | (ip_bytes[1] << 8) | ip_bytes[0];
+		ip_int = GUINT32_FROM_BE(be_value);
+
+		arv_device_set_integer_feature_value (ARV_DEVICE (gv_device), "GevPersistentIPAddress", ip_int, &local_error);
+		if (local_error != NULL) {
+			g_propagate_error(error, local_error);
+			return;
+		}
+	}
+
+	if (G_IS_INET_ADDRESS_MASK (mask)) {
+		GError *local_error = NULL;
+		const guint8 *mask_bytes;
+		guint32 be_value;
+		guint mask_length;
+		guint32 mask_int;
+
+		/* GigEVision specification does not support IPv6 */
+		if (g_inet_address_mask_get_family (mask) != G_SOCKET_FAMILY_IPV4) {
+			g_set_error (error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+						"Netmask is not IPv4 address");
+			return;
+		}
+
+		mask_length = g_inet_address_mask_get_length (mask);
+		mask_bytes = g_inet_address_to_bytes (g_inet_address_mask_get_address (mask));
+
+		if (mask_length == 32) {
+			/* Bitmask format (255.255.255.0) */
+			be_value = ((guint32)mask_bytes[3] << 24) | (mask_bytes[2] << 16) | (mask_bytes[1] << 8) | mask_bytes[0];
+		} else {
+			/* CIDR(slash) format (192.168.1.0/24) */
+			be_value = ~(~(guint32)0 >> mask_length);
+		}
+		mask_int = GUINT32_FROM_BE(be_value);
+		arv_device_set_integer_feature_value (ARV_DEVICE (gv_device), "GevPersistentSubnetMask", mask_int, &local_error);
+		if (local_error != NULL) {
+			g_propagate_error(error, local_error);
+			return;
+		}
+	}
+
+	if (G_IS_INET_ADDRESS (gateway)) {
+		GError *local_error = NULL;
+		const guint8 *gateway_bytes;
+		guint32 be_value;
+		guint32 gateway_int;
+
+		/* GigEVision specification does not support IPv6 */
+		if (g_inet_address_get_family (gateway) != G_SOCKET_FAMILY_IPV4) {
+			g_set_error (error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+						"Gateway address is not IPv4 address");
+			return;
+		}
+
+		gateway_bytes = g_inet_address_to_bytes (gateway);
+		be_value = ((guint32)gateway_bytes[3] << 24) | (gateway_bytes[2] << 16) | (gateway_bytes[1] << 8) | gateway_bytes[0];
+		gateway_int = GUINT32_FROM_BE(be_value);
+		arv_device_set_integer_feature_value (ARV_DEVICE (gv_device), "GevPersistentDefaultGateway", gateway_int, &local_error);
+		if (local_error != NULL) {
+			g_propagate_error(error, local_error);
+			return;
+		}
+	}
+
+	arv_gv_device_set_ip_configuration_mode (gv_device, ARV_GV_IP_CONFIGURATION_MODE_PERSISTENT_IP, error);
+}
+
+
+/**
+ * arv_gv_device_set_persistent_ip_from_string:
+ * @gv_device: a #ArvGvDevice
+ * @ip: (nullable): IPv4 address in string format
+ * @mask: (nullable): netmask in string format
+ * @gateway: (nullable): Gateway IPv4 address in string format
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Sets the persistent IP address to device.
+ *
+ * Since: 0.8.22
+ */
+
+void
+arv_gv_device_set_persistent_ip_from_string (ArvGvDevice *gv_device,
+                                             const char *ip, const char *mask, const char *gateway,
+                                             GError **error)
+{
+	GError *local_error = NULL;
+	GInetAddress *ip_gi = NULL;
+	GInetAddressMask *mask_gi = NULL;
+	GInetAddress *gateway_gi = NULL;
 
 	g_return_if_fail (ARV_IS_GV_DEVICE (gv_device));
 
-	g_return_if_fail (G_IS_INET_ADDRESS (ip));
-	g_return_if_fail (G_IS_INET_ADDRESS_MASK (mask));
-	g_return_if_fail (G_IS_INET_ADDRESS (gateway));
+	if (ip != NULL)
+		ip_gi = g_inet_address_new_from_string (ip);
 
-	/* GigEVision specification does not support IPv6 */
-	if (g_inet_address_get_family (ip) != G_SOCKET_FAMILY_IPV4) {
-		g_set_error (error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-				     "IP address is not IPv4 address");
+	if (mask != NULL)
+		mask_gi = g_inet_address_mask_new_from_string (mask, NULL);
+
+	if (gateway != NULL)
+		gateway_gi = g_inet_address_new_from_string (gateway);
+
+	if (ip != NULL && ip_gi == NULL) {
+		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                           "IP address could not be parsed: \"%s\"", ip);
+	} else if (mask != NULL && mask_gi == NULL) {
+		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                           "Netmask could not be parsed: \"%s\"", mask);
+	} else if (gateway != NULL && gateway_gi == NULL) {
+		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                           "Gateway address could not be parsed: \"%s\"", gateway);
+	}
+	if (local_error != NULL){
+		g_propagate_error (error, local_error);
+		g_clear_object (&ip_gi);
+		g_clear_object (&mask_gi);
+		g_clear_object (&gateway_gi);
 		return;
 	}
-	if (g_inet_address_mask_get_family (mask) != G_SOCKET_FAMILY_IPV4) {
-		g_set_error (error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-					 "Netmask is not IPv4 address");
-		return;
-	}
-	if (g_inet_address_get_family (gateway) != G_SOCKET_FAMILY_IPV4) {
-		g_set_error (error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-					 "Gateway address is not IPv4 address");
-		return;
-	}
-
-	ip_bytes = g_inet_address_to_bytes (ip);
-	mask_length = g_inet_address_mask_get_length (mask);
-	mask_bytes = g_inet_address_to_bytes (g_inet_address_mask_get_address (mask));
-	gateway_bytes = g_inet_address_to_bytes (gateway);
-
-	be_value = ((guint32)ip_bytes[0] << 24) | (ip_bytes[1] << 16) | (ip_bytes[2] << 8) | ip_bytes[3];
-	ip_int = GUINT32_FROM_BE(be_value);
-	if (mask_length == 32) {
-		/* Bitmask format (255.255.255.0) */
-		be_value = ((guint32)mask_bytes[0] << 24) | (mask_bytes[1] << 16) | (mask_bytes[2] << 8) | mask_bytes[3];
-	} else {
-		/* CIDR(slash) format (192.168.1.0/24) */
-		be_value = ~(~(guint32)0 >> mask_length);
-	}
-	mask_int = GUINT32_FROM_BE(be_value);
-
-	be_value = ((guint32)gateway_bytes[0] << 24) | (gateway_bytes[1] << 16) | (gateway_bytes[2] << 8) | gateway_bytes[3];
-	gateway_int = GUINT32_FROM_BE(be_value);
-
-	arv_device_set_integer_feature_value (ARV_DEVICE (gv_device), "GevPersistentIPAddress", ip_int, NULL);
-	arv_device_set_integer_feature_value (ARV_DEVICE (gv_device), "GevPersistentSubnetMask", mask_int, NULL);
-	arv_device_set_integer_feature_value (ARV_DEVICE (gv_device), "GevPersistentDefaultGateway", gateway_int, NULL);
-	arv_gv_device_set_ip_configuration_mode (gv_device, ARV_GV_IP_CONFIGURATION_MODE_PERSISTENT_IP, NULL);
+	arv_gv_device_set_persistent_ip (gv_device, ip_gi, mask_gi, gateway_gi, error);
+	g_clear_object (&ip_gi);
+	g_clear_object (&mask_gi);
+	g_clear_object (&gateway_gi);
 }
 
 /**
@@ -930,9 +1067,26 @@ arv_gv_device_set_persistent_ip (ArvGvDevice *gv_device,
 ArvGvIpConfigurationMode
 arv_gv_device_get_ip_configuration_mode (ArvGvDevice *gv_device, GError **error)
 {
+	gboolean dhcp_enabled;
+	gboolean persistent_ip_enabled;
+
 	g_return_val_if_fail (ARV_IS_GV_DEVICE (gv_device), 0);
 
-	return arv_device_get_integer_feature_value (ARV_DEVICE (gv_device), "GevIPConfigurationStatus", error);
+	if (arv_device_is_feature_available (ARV_DEVICE (gv_device), "GevIPConfigurationStatus", error))
+		return arv_device_get_integer_feature_value (ARV_DEVICE (gv_device), "GevIPConfigurationStatus", error);
+
+	dhcp_enabled = arv_device_get_boolean_feature_value( ARV_DEVICE (gv_device), "GevCurrentIPConfigurationDHCP", error);
+	if (*error != NULL)
+		return ARV_GV_IP_CONFIGURATION_MODE_NONE;
+	persistent_ip_enabled = arv_device_get_boolean_feature_value( ARV_DEVICE (gv_device), "GevCurrentIPConfigurationPersistentIP", error);
+	if (*error != NULL)
+		return ARV_GV_IP_CONFIGURATION_MODE_NONE;
+
+	if (dhcp_enabled && !persistent_ip_enabled)
+		return ARV_GV_IP_CONFIGURATION_MODE_DHCP;
+	if (!dhcp_enabled && persistent_ip_enabled)
+		return ARV_GV_IP_CONFIGURATION_MODE_PERSISTENT_IP;
+	return ARV_GV_IP_CONFIGURATION_MODE_LLA;
 }
 
 
@@ -1453,7 +1607,7 @@ arv_gv_device_load_genicam (ArvGvDevice *gv_device, GError **error)
 /* ArvDevice implemenation */
 
 static ArvStream *
-arv_gv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void *user_data, GError **error)
+arv_gv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void *user_data, GDestroyNotify destroy, GError **error)
 {
 	ArvGvDevice *gv_device = ARV_GV_DEVICE (device);
 	ArvGvDevicePrivate *priv = arv_gv_device_get_instance_private (gv_device);
@@ -1491,7 +1645,7 @@ arv_gv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void
 		}
 	}
 
-	stream = arv_gv_stream_new (gv_device, callback, user_data, error);
+	stream = arv_gv_stream_new (gv_device, callback, user_data, destroy, error);
 	if (!ARV_IS_STREAM (stream))
 		return NULL;
 

@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -141,11 +141,16 @@ static ArvGcAccessMode
 arv_gc_struct_entry_node_get_access_mode (ArvGcFeatureNode *gc_feature_node)
 {
 	ArvGcStructEntryNode *self = ARV_GC_STRUCT_ENTRY_NODE(gc_feature_node);
+        ArvDomNode *struct_register;
 
-	if (self->access_mode == NULL)
-		return ARV_GC_ACCESS_MODE_RO;
+        if (ARV_IS_GC_PROPERTY_NODE(self->access_mode))
+                return arv_gc_property_node_get_access_mode (self->access_mode, ARV_GC_ACCESS_MODE_RO);
 
-	return arv_gc_property_node_get_access_mode (self->access_mode, ARV_GC_ACCESS_MODE_RO);
+	struct_register = arv_dom_node_get_parent_node (ARV_DOM_NODE (gc_feature_node));
+	if (ARV_IS_GC_REGISTER_NODE (struct_register))
+                return arv_gc_feature_node_get_actual_access_mode (ARV_GC_FEATURE_NODE (struct_register));
+
+        return ARV_GC_ACCESS_MODE_RO;
 }
 
 static void

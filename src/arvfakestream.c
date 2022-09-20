@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -161,12 +161,13 @@ arv_fake_stream_stop_thread (ArvStream *stream)
  */
 
 ArvStream *
-arv_fake_stream_new (ArvFakeDevice *device, ArvStreamCallback callback, void *callback_data, GError **error)
+arv_fake_stream_new (ArvFakeDevice *device, ArvStreamCallback callback, void *callback_data, GDestroyNotify destroy, GError **error)
 {
 	return g_initable_new (ARV_TYPE_FAKE_STREAM, NULL, error,
 			       "device", device,
 			       "callback", callback,
 			       "callback-data", callback_data,
+						 "destroy-notify", destroy,
 			       NULL);
 }
 

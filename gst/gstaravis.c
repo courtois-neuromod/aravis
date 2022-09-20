@@ -2,7 +2,7 @@
  * Copyright © 2006 Eric Jonas <jonas@mit.edu>
  * Copyright © 2006 Antoine Tremblay <hexa00@gmail.com>
  * Copyright © 2010 United States Government, Joshua M. Doe <joshua.doe@us.army.mil>
- * Copyright © 2010-2019 Emmanuel Pacaud <emmanuel@gnome.org>
+ * Copyright © 2010-2019 Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -212,6 +212,7 @@ gst_aravis_set_caps (GstBaseSrc *src, GstCaps *caps)
 	GstStructure *structure;
 	ArvPixelFormat pixel_format;
 	gint height, width;
+	gint current_height, current_width;
 	int depth = 0, bpp = 0;
 	const GValue *frame_rate = NULL;
 	const char *caps_string;
@@ -231,9 +232,12 @@ gst_aravis_set_caps (GstBaseSrc *src, GstCaps *caps)
 	structure = gst_caps_get_structure (caps, 0);
 
 	GST_OBJECT_LOCK (gst_aravis);
-	arv_camera_get_region (gst_aravis->camera, NULL, NULL, &width, &height, &error);
+	arv_camera_get_region (gst_aravis->camera, NULL, NULL, &current_width, &current_height, &error);
 	if (error)
 		goto errored;
+
+        width = current_width;
+        height = current_height;
 
 	is_frame_rate_available = arv_camera_is_frame_rate_available (gst_aravis->camera, NULL);
 	is_gain_available = arv_camera_is_gain_available (gst_aravis->camera, NULL);
@@ -262,7 +266,16 @@ gst_aravis_set_caps (GstBaseSrc *src, GstCaps *caps)
 
 	if (!error) arv_camera_set_pixel_format (gst_aravis->camera, pixel_format, &error);
 	if (!error) arv_camera_set_binning (gst_aravis->camera, gst_aravis->h_binning, gst_aravis->v_binning, &error);
-	if (!error) arv_camera_set_region (gst_aravis->camera, gst_aravis->offset_x, gst_aravis->offset_y, width, height, &error);
+	if (!error) {
+                if (width != current_width || height != current_height)
+                        arv_camera_set_region (gst_aravis->camera,
+                                               gst_aravis->offset_x, gst_aravis->offset_y,
+                                               width, height, &error);
+                else
+                        arv_camera_set_region (gst_aravis->camera,
+                                               gst_aravis->offset_x, gst_aravis->offset_y,
+                                               -1, -1, &error);
+        }
 
 	if (!error && arv_camera_is_gv_device (gst_aravis->camera)) {
 		if (gst_aravis->packet_delay >= 0) {
@@ -280,17 +293,16 @@ gst_aravis_set_caps (GstBaseSrc *src, GstCaps *caps)
 	}
 
 	if (!error && frame_rate != NULL) {
-		double dbl_frame_rate;
 
-		dbl_frame_rate = (double) gst_value_get_fraction_numerator (frame_rate) /
+		gst_aravis->frame_rate = (double) gst_value_get_fraction_numerator (frame_rate) /
 			(double) gst_value_get_fraction_denominator (frame_rate);
 
-		GST_DEBUG_OBJECT (gst_aravis, "Frame rate = %g Hz", dbl_frame_rate);
-		arv_camera_set_frame_rate (gst_aravis->camera, dbl_frame_rate, &error);
+		GST_DEBUG_OBJECT (gst_aravis, "Frame rate = %g Hz", gst_aravis->frame_rate);
+		arv_camera_set_frame_rate (gst_aravis->camera, gst_aravis->frame_rate, &error);
 
-		if (dbl_frame_rate > 0.0)
+		if (gst_aravis->frame_rate > 0.0)
 			gst_aravis->buffer_timeout_us = MAX (GST_ARAVIS_BUFFER_TIMEOUT_DEFAULT,
-							     3e6 / dbl_frame_rate);
+                                                 3e6 / gst_aravis->frame_rate);
 		else
 			gst_aravis->buffer_timeout_us = GST_ARAVIS_BUFFER_TIMEOUT_DEFAULT;
 	} else
@@ -664,6 +676,7 @@ gst_aravis_init (GstAravis *gst_aravis)
 	gst_aravis->usb_mode = ARV_UV_USB_MODE_DEFAULT;
 
 	gst_aravis->buffer_timeout_us = GST_ARAVIS_BUFFER_TIMEOUT_DEFAULT;
+	gst_aravis->frame_rate = 0.0;
 
 	gst_aravis->camera = NULL;
 	gst_aravis->stream = NULL;
@@ -892,6 +905,62 @@ gst_aravis_get_property (GObject * object, guint prop_id, GValue * value,
 	}
 }
 
+static gboolean
+gst_aravis_query (GstBaseSrc *bsrc, GstQuery *query)
+{
+	GstAravis *src = GST_ARAVIS (bsrc);
+	gboolean res = FALSE;
+
+	switch (GST_QUERY_TYPE (query))
+	{
+		case GST_QUERY_LATENCY:
+		{
+			GstClockTime min_latency;
+			GstClockTime max_latency;
+
+			/* device must be open */
+			if (!src->stream)
+			{
+				GST_WARNING_OBJECT (src, "Can't give latency since device isn't open !");
+				goto done;
+			}
+
+			/* we must have a framerate */
+			if (src->frame_rate <= 0.0)
+			{
+				GST_WARNING_OBJECT (src, "Can't give latency since framerate isn't fixated !");
+				goto done;
+			}
+
+			/* min latency is the time to capture one frame/field */
+			min_latency = gst_util_gdouble_to_guint64 (src->frame_rate);
+
+			/* max latency is set to NONE because cameras may enter trigger mode
+			   and not deliver images for an unspecified amount of time */
+			max_latency = GST_CLOCK_TIME_NONE;
+
+			GST_DEBUG_OBJECT (bsrc, "report latency min %" GST_TIME_FORMAT " max %" GST_TIME_FORMAT,
+					  GST_TIME_ARGS (min_latency), GST_TIME_ARGS (max_latency));
+
+			/* we are always live, the min latency is 1 frame and the max latency is
+			 * the complete buffer of frames. */
+			gst_query_set_latency (query, TRUE, min_latency, max_latency);
+
+			res = TRUE;
+			break;
+		}
+		default:
+		{
+			res = GST_BASE_SRC_CLASS (gst_aravis_parent_class)->query (bsrc, query);
+			break;
+		}
+	}
+
+done:
+
+	return res;
+}
+
 static void
 gst_aravis_class_init (GstAravisClass * klass)
 {
@@ -1048,7 +1117,7 @@ gst_aravis_class_init (GstAravisClass * klass)
 					      "Aravis Video Source",
 					      "Source/Video",
 					      "Aravis based source",
-					      "Emmanuel Pacaud <emmanuel@gnome.org>");
+					      "Emmanuel Pacaud <emmanuel.pacaud@free.fr>");
 	gst_element_class_add_pad_template (element_class,
 					    gst_static_pad_template_get (&aravis_src_template));
 
@@ -1057,6 +1126,7 @@ gst_aravis_class_init (GstAravisClass * klass)
 	gstbasesrc_class->fixate = GST_DEBUG_FUNCPTR (gst_aravis_fixate_caps);
 	gstbasesrc_class->start = GST_DEBUG_FUNCPTR (gst_aravis_start);
 	gstbasesrc_class->stop = GST_DEBUG_FUNCPTR (gst_aravis_stop);
+	gstbasesrc_class->query = GST_DEBUG_FUNCPTR (gst_aravis_query);
 
 	gstbasesrc_class->get_times = GST_DEBUG_FUNCPTR (gst_aravis_get_times);
 

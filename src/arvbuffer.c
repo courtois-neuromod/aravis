@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,19 +17,18 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
- * SECTION: arvbuffer
- * @short_description: Buffer for storage of video frames
+ * ArvBuffer:
  *
- * #ArvBuffer provides a class for the instantiation of buffers used for the
- * storage of the separate images of the video stream. The actual data space
- * may either be allocated by #ArvBuffer during an object instatiation, of
- * preallocated. #ArvBuffer also allows the transmission of image metadata,
- * such as offsets and size of the transmitted region of interrest, pixel
- * format and time stamp.
+ * [class@ArvBuffer] provides a class for the instantiation of buffers used for the storage of the separate images of
+ * the video stream.
+ *
+ * The actual data space may either be allocated by [class@ArvBuffer] during an object instantiation, of pre-allocated.
+ * [class@ArvBuffer] also allows the transmission of image metadata, such as offsets and size of the transmitted region of
+ * interest, pixel format and time stamp.
  */
 
 #include <arvbufferprivate.h>
@@ -66,7 +65,7 @@ arv_buffer_payload_type_has_aoi (ArvBufferPayloadType payload_type)
  * If @user_data_destroy_func is non NULL, it will be called in order to destroy
  * user_data when the buffer is destroyed.
  *
- * Returns: a new #ArvBuffer object
+ * Returns: a new [class@ArvBuffer] object
  *
  * Since: 0.2.0
  */

@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -111,6 +111,8 @@ arv_gc_property_node_get_node_name (ArvDomNode *node)
 			return "Constant";
 		case ARV_GC_PROPERTY_NODE_TYPE_ACCESS_MODE:
 			return "AccessMode";
+		case ARV_GC_PROPERTY_NODE_TYPE_IMPOSED_ACCESS_MODE:
+			return "ImposedAccessMode";
 		case ARV_GC_PROPERTY_NODE_TYPE_CACHABLE:
 			return "Cachable";
 		case ARV_GC_PROPERTY_NODE_TYPE_POLLING_TIME:

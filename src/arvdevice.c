@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -66,7 +66,7 @@ G_DEFINE_ABSTRACT_TYPE_WITH_CODE (ArvDevice, arv_device, G_TYPE_OBJECT,
 				  G_IMPLEMENT_INTERFACE (G_TYPE_INITABLE, arv_device_initable_iface_init))
 
 /**
- * arv_device_create_stream:
+ * arv_device_create_stream: (skip)
  * @device: a #ArvDevice
  * @callback: (scope call): a frame processing callback
  * @user_data: (allow-none) (closure): user data for @callback
@@ -83,9 +83,31 @@ G_DEFINE_ABSTRACT_TYPE_WITH_CODE (ArvDevice, arv_device, G_TYPE_OBJECT,
 ArvStream *
 arv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void *user_data, GError **error)
 {
+	return arv_device_create_stream_full(device, callback, user_data, NULL, error);
+}
+
+/**
+ * arv_device_create_stream_full: (rename-to arv_device_create_stream)
+ * @device: a #ArvDevice
+ * @callback: (scope notified): a frame processing callback
+ * @user_data: (allow-none) (closure): user data for @callback
+ * @destroy: a #GDestroyNotify placeholder, %NULL to ignore
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Creates a new #ArvStream for video stream handling. See
+ * @ArvStreamCallback for details regarding the callback function.
+ *
+ * Return value: (transfer full): a new #ArvStream.
+ *
+ * Since: 0.8.23
+ */
+
+ArvStream *
+arv_device_create_stream_full (ArvDevice *device, ArvStreamCallback callback, void *user_data, GDestroyNotify destroy, GError **error)
+{
 	g_return_val_if_fail (ARV_IS_DEVICE (device), NULL);
 
-	return ARV_DEVICE_GET_CLASS (device)->create_stream (device, callback, user_data, error);
+	return ARV_DEVICE_GET_CLASS (device)->create_stream (device, callback, user_data, destroy, error);
 }
 
 /**

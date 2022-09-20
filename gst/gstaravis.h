@@ -2,7 +2,7 @@
  * Copyright © 2006 Eric Jonas <jonas@mit.edu>
  * Copyright © 2006 Antoine Tremblay <hexa00@gmail.com>
  * Copyright © 2010 United States Government, Joshua M. Doe <joshua.doe@us.army.mil>
- * Copyright © 2010-2019 Emmanuel Pacaud <emmanuel@gnome.org>
+ * Copyright © 2010-2019 Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Library General Public
@@ -68,6 +68,7 @@ struct _GstAravis {
 	gint payload;
 
 	guint64 buffer_timeout_us;
+    gdouble frame_rate;
 
 	ArvCamera *camera;
 	ArvStream *stream;

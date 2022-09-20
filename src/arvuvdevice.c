@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -167,10 +167,10 @@ arv_uv_device_bulk_transfer (ArvUvDevice *uv_device, ArvUvEndpointType endpoint_
 }
 
 static ArvStream *
-arv_uv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void *user_data, GError **error)
+arv_uv_device_create_stream (ArvDevice *device, ArvStreamCallback callback, void *user_data, GDestroyNotify destroy, GError **error)
 {
 	ArvUvDevicePrivate *priv = arv_uv_device_get_instance_private (ARV_UV_DEVICE (device));
-	return arv_uv_stream_new (ARV_UV_DEVICE (device), callback, user_data, priv->usb_mode, error);
+	return arv_uv_stream_new (ARV_UV_DEVICE (device), callback, user_data, destroy, priv->usb_mode, error);
 }
 
 static gboolean
@@ -914,6 +914,15 @@ arv_uv_device_constructed (GObject *object)
 
         g_mutex_init (&priv->transfer_mutex);
 
+	result = libusb_init (&priv->usb);
+        if (result != 0) {
+                arv_device_take_init_error (ARV_DEVICE (uv_device),
+                                            g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_PROTOCOL_ERROR,
+                                                         "Failed to initialize USB library: %s",
+                                                         libusb_error_name (result)));
+                return;
+        }
+
         if (priv->vendor != NULL)
                 arv_info_device ("[UvDevice::new] Vendor  = %s", priv->vendor);
         if (priv->product != NULL)
@@ -923,7 +932,6 @@ arv_uv_device_constructed (GObject *object)
         if (priv->guid != NULL)
                 arv_info_device ("[UvDevice::new] GUID    = %s", priv->guid);
 
-	libusb_init (&priv->usb);
 	priv->packet_id = 65300; /* Start near the end of the circular counter */
 	priv->timeout_ms = 32;
 
@@ -1023,7 +1031,8 @@ arv_uv_device_finalize (GObject *object)
 		libusb_release_interface (priv->usb_device, priv->data_interface);
 		libusb_close (priv->usb_device);
 	}
-	libusb_exit (priv->usb);
+        if (priv->usb != NULL)
+                libusb_exit (priv->usb);
         g_mutex_clear (&priv->transfer_mutex);
 
 	G_OBJECT_CLASS (arv_uv_device_parent_class)->finalize (object);

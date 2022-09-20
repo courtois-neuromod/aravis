@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 /**
@@ -63,6 +63,7 @@ static void arv_camera_get_integer_bounds_as_double (ArvCamera *camera, const ch
  * @ARV_CAMERA_VENDOR_POINT_GREY_FLIR: PointGrey / FLIR
  * @ARV_CAMERA_VENDOR_XIMEA: XIMEA GmbH
  * @ARV_CAMERA_VENDOR_MATRIX_VISION: Matrix Vision GmbH
+ * @ARV_CAMERA_VENDOR_IMPERX: Imperx, Inc
  */
 
 typedef enum {
@@ -74,7 +75,8 @@ typedef enum {
 	ARV_CAMERA_VENDOR_POINT_GREY_FLIR,
 	ARV_CAMERA_VENDOR_RICOH,
 	ARV_CAMERA_VENDOR_XIMEA,
-	ARV_CAMERA_VENDOR_MATRIX_VISION
+	ARV_CAMERA_VENDOR_MATRIX_VISION,
+	ARV_CAMERA_VENDOR_IMPERX
 } ArvCameraVendor;
 
 typedef enum {
@@ -88,7 +90,9 @@ typedef enum {
 	ARV_CAMERA_SERIES_POINT_GREY_FLIR,
 	ARV_CAMERA_SERIES_RICOH,
 	ARV_CAMERA_SERIES_XIMEA,
-	ARV_CAMERA_SERIES_MATRIX_VISION
+	ARV_CAMERA_SERIES_MATRIX_VISION,
+	ARV_CAMERA_SERIES_IMPERX_CHEETAH,
+	ARV_CAMERA_SERIES_IMPERX_OTHER
 } ArvCameraSeries;
 
 typedef struct {
@@ -114,6 +118,8 @@ typedef struct {
 	gboolean has_acquisition_frame_rate_auto;
 	gboolean has_acquisition_frame_rate_enabled;
 
+        gboolean has_region_offset;
+
 	GError *init_error;
 } ArvCameraPrivate;
 
@@ -131,16 +137,16 @@ enum
 };
 
 /**
- * arv_camera_create_stream:
+ * arv_camera_create_stream: (skip)
  * @camera: a #ArvCamera
  * @callback: (scope call) (allow-none): a frame processing callback
  * @user_data: (closure) (allow-none): user data for @callback
  * @error: a #GError placeholder, %NULL to ignore
  *
- * Creates a new #ArvStream for video stream handling. See
- * #ArvStreamCallback for details regarding the callback function.
+ * Creates a new [class@ArvStream] for video stream reception. See
+ * [callback@ArvStreamCallback] for details regarding the callback function.
  *
- * Returns: (transfer full): a new #ArvStream, to be freed after use with g_object_unref().
+ * Returns: (transfer full): a new [class@ArvStream], to be freed after use with [method@GObject.Object.unref].
  *
  * Since: 0.2.0
  */
@@ -148,11 +154,33 @@ enum
 ArvStream *
 arv_camera_create_stream (ArvCamera *camera, ArvStreamCallback callback, gpointer user_data, GError **error)
 {
+	return arv_camera_create_stream_full(camera, callback, user_data, NULL, error);
+}
+
+/**
+ * arv_camera_create_stream_full: (rename-to arv_camera_create_stream)
+ * @camera: a #ArvCamera
+ * @callback: (scope notified) (allow-none): a frame processing callback
+ * @user_data: (closure) (allow-none): user data for @callback
+ * @destroy: a #GDestroyNotify placeholder, %NULL to ignore
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Creates a new [class@ArvStream] for video stream reception. See
+ * [callback@ArvStreamCallback] for details regarding the callback function.
+ *
+ * Returns: (transfer full): a new [class@ArvStream], to be freed after use with [method@GObject.Object.unref].
+ *
+ * Since: 0.8.23
+ */
+
+ArvStream *
+arv_camera_create_stream_full (ArvCamera *camera, ArvStreamCallback callback, gpointer user_data, GDestroyNotify destroy, GError **error)
+{
 	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
 
 	g_return_val_if_fail (ARV_IS_CAMERA (camera), NULL);
 
-	return arv_device_create_stream (priv->device, callback, user_data, error);
+	return arv_device_create_stream_full (priv->device, callback, user_data, destroy, error);
 }
 
 /* Device control */
@@ -257,6 +285,40 @@ arv_camera_get_sensor_size (ArvCamera *camera, gint *width, gint *height, GError
 }
 
 /**
+ * arv_camera_is_region_offset_available:
+ * @camera: a #ArvCamera
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Returns: %TRUE% if OffsetX and OffsetY features are available.
+ *
+ * Since: 0.8.22
+ */
+
+gboolean
+arv_camera_is_region_offset_available (ArvCamera *camera, GError **error)
+{
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
+        GError *local_error = NULL;
+        gboolean has_offset_x, has_offset_y;
+
+        g_return_val_if_fail (ARV_IS_CAMERA (camera), FALSE);
+
+        if (!priv->has_region_offset)
+                return FALSE;
+
+        has_offset_x = arv_camera_is_feature_available (camera, "OffsetX", &local_error);
+        if (local_error == NULL)
+                has_offset_y = arv_camera_is_feature_available (camera, "OffsetY", &local_error);
+
+        if (local_error != NULL) {
+                g_propagate_error (error, local_error);
+                return FALSE;
+        }
+
+        return has_offset_x && has_offset_y;
+}
+
+/**
  * arv_camera_set_region:
  * @camera: a #ArvCamera
  * @x: x offset
@@ -274,22 +336,29 @@ arv_camera_get_sensor_size (ArvCamera *camera, gint *width, gint *height, GError
 void
 arv_camera_set_region (ArvCamera *camera, gint x, gint y, gint width, gint height, GError **error)
 {
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
 	GError *local_error = NULL;
 
 	g_return_if_fail (ARV_IS_CAMERA (camera));
 
-	if (x >= 0)
-		arv_camera_set_integer (camera, "OffsetX", 0, &local_error);
-	if (y >= 0 && local_error == NULL)
-		arv_camera_set_integer (camera, "OffsetY", 0, &local_error);
-	if (width > 0 && local_error == NULL)
-		arv_camera_set_integer (camera, "Width", width, &local_error);
-	if (height > 0 && local_error == NULL)
-		arv_camera_set_integer (camera, "Height", height, &local_error);
-	if (x >= 0 && local_error == NULL)
-		arv_camera_set_integer (camera, "OffsetX", x, &local_error);
-	if (y >= 0 && local_error == NULL)
-		arv_camera_set_integer (camera, "OffsetY", y, &local_error);
+        if (priv->has_region_offset) {
+                if (x >= 0)
+                        arv_camera_set_integer (camera, "OffsetX", 0, &local_error);
+                if (y >= 0 && local_error == NULL)
+                        arv_camera_set_integer (camera, "OffsetY", 0, &local_error);
+        }
+
+        if (width > 0 && local_error == NULL)
+                arv_camera_set_integer (camera, "Width", width, &local_error);
+        if (height > 0 && local_error == NULL)
+                arv_camera_set_integer (camera, "Height", height, &local_error);
+
+        if (priv->has_region_offset) {
+                if (x >= 0 && local_error == NULL)
+                        arv_camera_set_integer (camera, "OffsetX", x, &local_error);
+                if (y >= 0 && local_error == NULL)
+                        arv_camera_set_integer (camera, "OffsetY", y, &local_error);
+        }
 
 	if (local_error != NULL)
 		g_propagate_error (error, local_error);
@@ -312,14 +381,15 @@ arv_camera_set_region (ArvCamera *camera, gint x, gint y, gint width, gint heigh
 void
 arv_camera_get_region (ArvCamera *camera, gint *x, gint *y, gint *width, gint *height, GError **error)
 {
+	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
 	GError *local_error = NULL;
 
 	g_return_if_fail (ARV_IS_CAMERA (camera));
 
 	if (x != NULL)
-		*x = arv_camera_get_integer (camera, "OffsetX", &local_error);
+		*x = priv->has_region_offset ? arv_camera_get_integer (camera, "OffsetX", &local_error) : 0;
 	if (y != NULL && local_error == NULL)
-		*y = arv_camera_get_integer (camera, "OffsetY", &local_error);
+		*y = priv->has_region_offset ? arv_camera_get_integer (camera, "OffsetY", &local_error) : 0;
 	if (width != NULL && local_error == NULL)
 		*width = arv_camera_get_integer (camera, "Width", &local_error);
 	if (height != NULL && local_error == NULL)
@@ -974,11 +1044,9 @@ arv_camera_set_frame_rate (ArvCamera *camera, double frame_rate, GError **error)
 		return;
 	}
 
-	arv_camera_clear_triggers (camera, &local_error);
-	if (local_error != NULL) {
-		g_propagate_error (error, local_error);
-		return;
-	}
+        /* Ignore the error in order to be able to change the frame rate during the acquisition, as some devices don't
+         * allow to change TriggerMode if the acquisition is already started. */
+	arv_camera_clear_triggers (camera, NULL);
 
 	arv_camera_get_frame_rate_bounds (camera, &minimum, &maximum, &local_error);
 	if (local_error != NULL) {
@@ -1052,6 +1120,7 @@ arv_camera_set_frame_rate (ArvCamera *camera, double frame_rate, GError **error)
 		case ARV_CAMERA_VENDOR_RICOH:
 		case ARV_CAMERA_VENDOR_XIMEA:
 		case ARV_CAMERA_VENDOR_MATRIX_VISION:
+		case ARV_CAMERA_VENDOR_IMPERX:
 		case ARV_CAMERA_VENDOR_UNKNOWN:
                         if (local_error == NULL) {
                                 if (arv_camera_is_feature_available (camera, "AcquisitionFrameRateEnable", &local_error)) {
@@ -1113,6 +1182,7 @@ arv_camera_get_frame_rate (ArvCamera *camera, GError **error)
 		case ARV_CAMERA_VENDOR_BASLER:
 		case ARV_CAMERA_VENDOR_XIMEA:
 		case ARV_CAMERA_VENDOR_MATRIX_VISION:
+		case ARV_CAMERA_VENDOR_IMPERX:
 		case ARV_CAMERA_VENDOR_UNKNOWN:
 			return arv_camera_get_float (camera,
 						     priv->has_acquisition_frame_rate ?
@@ -1190,6 +1260,7 @@ arv_camera_get_frame_rate_bounds (ArvCamera *camera, double *min, double *max, G
 		case ARV_CAMERA_VENDOR_BASLER:
 	        case ARV_CAMERA_VENDOR_XIMEA:
 		case ARV_CAMERA_VENDOR_MATRIX_VISION:
+		case ARV_CAMERA_VENDOR_IMPERX:
 		case ARV_CAMERA_VENDOR_UNKNOWN:
 			arv_camera_get_float_bounds (camera,
 						     priv->has_acquisition_frame_rate ?
@@ -1470,6 +1541,7 @@ arv_camera_set_exposure_time (ArvCamera *camera, double exposure_time_us, GError
 		case ARV_CAMERA_SERIES_XIMEA:
 			arv_camera_set_integer (camera, "ExposureTime", exposure_time_us, &local_error);
 			break;
+		case ARV_CAMERA_SERIES_IMPERX_CHEETAH:
 		case ARV_CAMERA_SERIES_MATRIX_VISION:
 			arv_camera_set_string (camera, "ExposureMode", "Timed", &local_error);
 			if (local_error == NULL)
@@ -1958,6 +2030,7 @@ arv_camera_is_frame_rate_available (ArvCamera *camera, GError **error)
 		case ARV_CAMERA_VENDOR_BASLER:
 	        case ARV_CAMERA_VENDOR_XIMEA:
 		case ARV_CAMERA_VENDOR_MATRIX_VISION:
+		case ARV_CAMERA_VENDOR_IMPERX:
 		case ARV_CAMERA_VENDOR_UNKNOWN:
 			return arv_camera_is_feature_available (camera,
 								priv->has_acquisition_frame_rate ?
@@ -1984,11 +2057,13 @@ arv_camera_is_exposure_time_available (ArvCamera *camera, GError **error)
 
 	g_return_val_if_fail (ARV_IS_CAMERA (camera), FALSE);
 
-	switch (priv->vendor) {
-		case ARV_CAMERA_VENDOR_XIMEA:
+	switch (priv->series) {
+		case ARV_CAMERA_SERIES_XIMEA:
 			return arv_camera_is_feature_available (camera, "ExposureTime", error);
-		case ARV_CAMERA_VENDOR_RICOH:
+		case ARV_CAMERA_SERIES_RICOH:
 			return arv_camera_is_feature_available (camera, "ExposureTimeRaw", error);
+		case ARV_CAMERA_SERIES_IMPERX_CHEETAH:
+			return arv_camera_is_feature_available (camera, "ExposureMode", error);
 		default:
 			return arv_camera_is_feature_available (camera,
 								priv->has_exposure_time ?  "ExposureTime" : "ExposureTimeAbs",
@@ -3046,40 +3121,11 @@ arv_camera_gv_set_persistent_ip_from_string (ArvCamera *camera,
                                              const char *ip, const char *mask, const char *gateway,
                                              GError **error)
 {
-	GError *local_error = NULL;
-	GInetAddress *ip_gi;
-	GInetAddressMask *mask_gi;
-	GInetAddress *gateway_gi;
 	ArvCameraPrivate *priv = arv_camera_get_instance_private (camera);
 
 	g_return_if_fail (arv_camera_is_gv_device (camera));
 
-	ip_gi = g_inet_address_new_from_string (ip);
-	mask_gi = g_inet_address_mask_new_from_string (mask, NULL);
-	gateway_gi = g_inet_address_new_from_string (gateway);
-
-	if (ip_gi == NULL) {
-		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-                                           "IP address could not be parsed: \"%s\"", ip);
-	}else if (mask_gi == NULL) {
-		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-                                           "Netmask could not be parsed: \"%s\"", mask);
-	}else if (gateway_gi == NULL) {
-		local_error = g_error_new (ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-                                           "Gateway address could not be parsed: \"%s\"", gateway);
-	}
-	if (local_error != NULL){
-		g_propagate_error (error, local_error);
-		g_clear_object (&ip_gi);
-		g_clear_object (&mask_gi);
-		g_clear_object (&gateway_gi);
-		return;
-	}
-
-	arv_gv_device_set_persistent_ip (ARV_GV_DEVICE (priv->device), ip_gi, mask_gi, gateway_gi, error);
-	g_object_unref (ip_gi);
-	g_object_unref (mask_gi);
-	g_object_unref (gateway_gi);
+	arv_gv_device_set_persistent_ip_from_string (ARV_GV_DEVICE (priv->device), ip, mask, gateway, error);
 }
 
 /**
@@ -3482,9 +3528,9 @@ arv_camera_set_chunks (ArvCamera *camera, const char *chunk_list, GError **error
  * arv_camera_create_chunk_parser:
  * @camera: a #ArvCamera
  *
- * Creates a new #ArvChunkParser object, used for the extraction of chunk data from #ArvBuffer.
+ * Creates a new [class@ArvChunkParser] object, used for the extraction of chunk data from [class@ArvBuffer].
  *
- * Returns: (transfer full): a new #ArvChunkParser.
+ * Returns: (transfer full): a new [class@ArvChunkParser].
  *
  * Since: 0.4.0
  */
@@ -3655,6 +3701,12 @@ arv_camera_constructed (GObject *object)
 	} else if (g_strcmp0 (vendor_name, "MATRIX VISION GmbH") == 0) {
 		vendor = ARV_CAMERA_VENDOR_MATRIX_VISION;
 		series = ARV_CAMERA_SERIES_MATRIX_VISION;
+	} else if (g_strcmp0 (vendor_name, "Imperx, Inc") == 0) {
+		vendor = ARV_CAMERA_VENDOR_IMPERX;
+		if (g_str_has_prefix (model_name, "POE-C"))
+			series = ARV_CAMERA_SERIES_IMPERX_CHEETAH;
+		else
+			series = ARV_CAMERA_SERIES_IMPERX_OTHER;
 	} else {
 		vendor = ARV_CAMERA_VENDOR_UNKNOWN;
 		series = ARV_CAMERA_SERIES_UNKNOWN;
@@ -3680,6 +3732,9 @@ arv_camera_constructed (GObject *object)
 											  "AcquisitionFrameRateAuto"));
 	priv->has_acquisition_frame_rate_enabled = ARV_IS_GC_BOOLEAN (arv_device_get_feature (priv->device,
 											      "AcquisitionFrameRateEnabled"));
+
+        priv->has_region_offset = ARV_IS_GC_INTEGER(arv_device_get_feature(priv->device, "OffsetX")) &&
+                ARV_IS_GC_INTEGER(arv_device_get_feature(priv->device, "OffsetY"));
 }
 
 static void

@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 #include <gtk/gtk.h>
@@ -1410,6 +1410,7 @@ start_camera (ArvViewer *viewer, const char *camera_id)
 	const char **pixel_format_strings;
 	guint i, n_pixel_formats, n_pixel_format_strings, n_valid_formats;
 	gboolean binning_available;
+        gboolean region_offset_available;
         gboolean bayer_tooltip = FALSE;
         gint current_format = -1;
 
@@ -1478,6 +1479,10 @@ start_camera (ArvViewer *viewer, const char *camera_id)
                                      "Found bayer pixel formats, but the GStreamer bayer plugin "
                                      "is not installed." :
                                      NULL);
+
+        region_offset_available = arv_camera_is_region_offset_available (viewer->camera, NULL);
+	gtk_widget_set_sensitive (viewer->camera_x, region_offset_available);
+	gtk_widget_set_sensitive (viewer->camera_y, region_offset_available);
 
 	binning_available = arv_camera_is_binning_available (viewer->camera, NULL);
 	gtk_widget_set_sensitive (viewer->camera_binning_x, binning_available);

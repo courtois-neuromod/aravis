@@ -9,12 +9,12 @@ on:
 
 jobs:
   msvc:
-    runs-on: windows-latest
+    runs-on: windows-2019
     strategy:
       fail-fast: false
       matrix:
         include:
-        - version: 17
+        - version: 16
           arch: x86_64
           build_type_conan: Release
           build_type_meson: release
@@ -22,12 +22,16 @@ jobs:
     - name: pip
       run: |
         pip install conan
+    - name: disable-perl
+      run: |
+        rm -r C:\Strawberry\perl
     - name: checkout
       uses: actions/checkout@v2
     - name: conan
       env:
         INPUT_CONANFILE: |
           [requires]
+          libiconv/1.17
           glib/2.70.0
           #gobject-introspection/1.69.0
           gstreamer/1.19.1
@@ -39,6 +43,7 @@ jobs:
 
           [build_requires]
           meson/0.59.2
+          pkgconf/1.7.4
 
           [generators]
           pkg_config
@@ -52,14 +57,14 @@ jobs:
           gst-plugins-base:shared=True
       run: |
         $Env:INPUT_CONANFILE | Out-File -FilePath ${{ github.workspace }}\conanfile.txt -Encoding utf8
-        conan install -s compiler="Visual Studio" -s compiler.version=${{ matrix.version }} -s arch=${{ matrix.arch }} -s build_type=${{ matrix.build_type_conan }} -b pcre -b missing -b cascade -if build .
+        conan install -s os="Windows" -s compiler="Visual Studio" -s compiler.version=${{ matrix.version }} -s arch=${{ matrix.arch }} -s build_type=${{ matrix.build_type_conan }} -b pcre -b missing -b cascade -if build .
     - name: meson
       run: |
         .\build\activate.ps1
         .\build\activate_build.ps1
         .\build\activate_run.ps1
         echo "::group::configure"
-        meson --prefix ${{ github.workspace }}\install --buildtype ${{ matrix.build_type_meson }} --pkg-config-path ${{ github.workspace }}\build -Ddocumentation=disabled -Dgst-plugin=enabled -Dintrospection=disabled -Dusb=enabled -Dviewer=disabled -Dgv-n-buffers=1 . .\build
+        meson --prefix ${{ github.workspace }}\install --buildtype ${{ matrix.build_type_meson }} --pkg-config-path ${{ github.workspace }}\build -Ddocumentation=disabled -Dgst-plugin=disabled -Dintrospection=disabled -Dusb=enabled -Dviewer=disabled -Dgv-n-buffers=1 . .\build
         echo "::endgroup::"
         echo "::group::compile"
         meson compile -C .\build -v

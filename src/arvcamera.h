@@ -1,6 +1,6 @@
 /* Aravis - Digital camera library
  *
- * Copyright © 2009-2019 Emmanuel Pacaud
+ * Copyright © 2009-2022 Emmanuel Pacaud
  *
  * This library is free software; you can redistribute it and/or
  * modify it under the terms of the GNU Lesser General Public
@@ -17,7 +17,7 @@
  * Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor,
  * Boston, MA 02110-1301, USA.
  *
- * Author: Emmanuel Pacaud <emmanuel@gnome.org>
+ * Author: Emmanuel Pacaud <emmanuel.pacaud@free.fr>
  */
 
 #ifndef ARV_CAMERA_H
@@ -47,6 +47,7 @@ ARV_API ArvCamera *	arv_camera_new_with_device	(ArvDevice *device, GError **erro
 ARV_API ArvDevice *	arv_camera_get_device		(ArvCamera *camera);
 
 ARV_API ArvStream *	arv_camera_create_stream	(ArvCamera *camera, ArvStreamCallback callback, void *user_data, GError **error);
+ARV_API ArvStream *	arv_camera_create_stream_full	(ArvCamera *camera, ArvStreamCallback callback, void *user_data, GDestroyNotify destroy, GError **error);
 
 /* Device informations */
 
@@ -56,6 +57,8 @@ ARV_API const char * 	arv_camera_get_device_serial_number	(ArvCamera *camera, GE
 ARV_API const char *	arv_camera_get_device_id		(ArvCamera *camera, GError **error);
 
 /* Image format control */
+
+ARV_API gboolean        arv_camera_is_region_offset_available    (ArvCamera *camera, GError **error);
 
 ARV_API void 		arv_camera_get_sensor_size 		(ArvCamera *camera, gint *width, gint *height, GError **error);
 ARV_API void		arv_camera_set_region			(ArvCamera *camera, gint x, gint y, gint width, gint height, GError **error);
