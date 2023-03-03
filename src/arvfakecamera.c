@@ -526,8 +526,8 @@ double x_pos, y_pos, pupil = 30, x_speed=0, y_speed=0, pupil_speed=0, x_acc=0, y
 			return;
 
 
-		width = buffer->priv->width;
-		height = buffer->priv->height;
+		width = buffer->priv->parts[0].width;
+		height = buffer->priv->parts[0].height;
 
 		if (x_pos == 0 && y_pos == 0){
 			x_pos = width / 2;
