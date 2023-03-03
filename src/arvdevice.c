@@ -345,6 +345,29 @@ arv_device_is_feature_available (ArvDevice *device, const char *feature, GError 
 	return ARV_IS_GC_FEATURE_NODE (node) && arv_gc_feature_node_is_available (ARV_GC_FEATURE_NODE (node), error);
 }
 
+/**
+ * arv_device_is_feature_implemented:
+ * @device: a #ArvDevice
+ * @feature: feature name
+ * @error: a #GError placeholder, %NULL to ignore
+ *
+ * Return: %TRUE if feature is implemented, %FALSE if not or on error.
+ *
+ * Since: 0.8.23
+ */
+
+gboolean
+arv_device_is_feature_implemented (ArvDevice *device, const char *feature, GError **error)
+{
+	ArvGcNode* node;
+
+	g_return_val_if_fail (ARV_IS_DEVICE (device), FALSE);
+	g_return_val_if_fail (feature != NULL, FALSE);
+
+	node = arv_device_get_feature (device, feature);
+	return ARV_IS_GC_FEATURE_NODE (node) && arv_gc_feature_node_is_implemented (ARV_GC_FEATURE_NODE (node), error);
+}
+
 static void *
 _get_feature (ArvDevice *device, GType node_type, const char *feature, GError **error)
 {
@@ -945,20 +968,48 @@ arv_device_set_features_from_string (ArvDevice *device, const char *string, GErr
 			ArvGcNode *feature;
 			char *key = g_match_info_fetch_named (match_info, "Key");
 			char *value = g_match_info_fetch_named (match_info, "Value");
+                        size_t key_length = key != NULL ? strlen (key) : 0;
 
-			feature = arv_device_get_feature (device, key);
-			if (ARV_IS_GC_FEATURE_NODE (feature)) {
-				if (ARV_IS_GC_COMMAND (feature)) {
-					arv_device_execute_command (device, key, &local_error);
-				} else if (value != NULL) {
-					arv_gc_feature_node_set_value_from_string (ARV_GC_FEATURE_NODE (feature), value, &local_error);
-				} else {
-					g_set_error (&local_error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_INVALID_PARAMETER,
-						     "[%s] Require a parameter value to set", key);
-				}
-			} else
-				g_set_error (&local_error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_FEATURE_NOT_FOUND,
-					     "[%s] Not found", key);
+                        if (key_length > 4 && key[0] == 'R' && key[1] == '[' && key[key_length - 1] == ']') {
+                                char *end;
+                                gint64 address;
+                                gint64 int_value;
+
+                                address = g_ascii_strtoll (&key[2], &end, 0);
+                                if (end == NULL || end != key + key_length -1) {
+                                        g_set_error (&local_error,
+                                                     ARV_DEVICE_ERROR,
+                                                     ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                                     "Invalid address in %s", key);
+                                } else {
+                                        int_value = g_ascii_strtoll (value, &end, 0);
+                                        if (end == NULL || end[0] != '\0') {
+                                                g_set_error (&local_error,
+                                                             ARV_DEVICE_ERROR,
+                                                             ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                                             "Invalid %s value for %s", value, key);
+                                        } else {
+                                                arv_device_write_register (device, address, int_value, &local_error);
+                                        }
+                                }
+                        } else {
+                                feature = arv_device_get_feature (device, key);
+                                if (ARV_IS_GC_FEATURE_NODE (feature)) {
+                                        if (ARV_IS_GC_COMMAND (feature)) {
+                                                arv_device_execute_command (device, key, &local_error);
+                                        } else if (value != NULL) {
+                                                arv_gc_feature_node_set_value_from_string (ARV_GC_FEATURE_NODE (feature),
+                                                                                           value, &local_error);
+                                        } else {
+                                                g_set_error (&local_error,
+                                                             ARV_DEVICE_ERROR,
+                                                             ARV_DEVICE_ERROR_INVALID_PARAMETER,
+                                                             "[%s] Require a parameter value to set", key);
+                                        }
+                                } else
+                                        g_set_error (&local_error, ARV_DEVICE_ERROR, ARV_DEVICE_ERROR_FEATURE_NOT_FOUND,
+                                                     "[%s] Not found", key);
+                        }
 
 			g_free (key);
 			g_free (value);

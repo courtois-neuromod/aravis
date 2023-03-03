@@ -596,18 +596,18 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 	guint32 width;
 	guint32 height;
 
-	if (buffer == NULL)
-		return;
+        g_return_if_fail (buffer != NULL);
+        g_return_if_fail (buffer->priv->n_parts == 1);
 
-	width = buffer->priv->width;
-	height = buffer->priv->height;
+	width = buffer->priv->parts[0].width;
+	height = buffer->priv->parts[0].height;
 
 	scale = 1.0 + gain + log10 ((double) exposure_time_us / 10000.0);
 
 	switch (pixel_format)
 	{
 		case ARV_PIXEL_FORMAT_MONO_8:
-			if (height * width <= buffer->priv->size) {
+			if (height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned char *pixel = &buffer->priv->data [y * width + x];
@@ -618,11 +618,12 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						*pixel = CLAMP (pixel_value, 0, 255);
 					}
 				}
+                                buffer->priv->received_size = height * width;
 			}
 			break;
 
 		case ARV_PIXEL_FORMAT_MONO_16:
-			if (2 * height * width <= buffer->priv->size) {
+			if (2 * height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned short *pixel = (unsigned short *)&buffer->priv->data [2*y * width + 2*x];
@@ -633,11 +634,12 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						*pixel = CLAMP (pixel_value, 0, 65535);
 					}
 				}
+                                buffer->priv->received_size = 2 * height * width;
 			}
 			break;
 
 		case ARV_PIXEL_FORMAT_BAYER_BG_8:
-			if (height * width <= buffer->priv->size) {
+			if (height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned int index;
@@ -663,11 +665,12 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						}
 					}
 				}
+                                buffer->priv->received_size = height * width;
 			}
 			break;
 
 		case ARV_PIXEL_FORMAT_BAYER_GB_8:
-			if (height * width <= buffer->priv->size) {
+			if (height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned int index;
@@ -693,11 +696,12 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						}
 					}
 				}
+                                buffer->priv->received_size = height * width;
 			}
 			break;
 
 		case ARV_PIXEL_FORMAT_BAYER_GR_8:
-			if (height * width <= buffer->priv->size) {
+			if (height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned int index;
@@ -723,11 +727,12 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						}
 					}
 				}
+                                buffer->priv->received_size = height * width;
 			}
 			break;
 
 		case ARV_PIXEL_FORMAT_BAYER_RG_8:
-			if (height * width <= buffer->priv->size) {
+			if (height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned int index;
@@ -753,11 +758,12 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						}
 					}
 				}
+                                buffer->priv->received_size = height * width;
 			}
 			break;
 
 		case ARV_PIXEL_FORMAT_RGB_8_PACKED:
-			if (3 * height * width <= buffer->priv->size) {
+			if (3 * height * width <= buffer->priv->allocated_size) {
 				for (y = 0; y < height; y++) {
 					for (x = 0; x < width; x++) {
 						unsigned char *pixel = &buffer->priv->data [3 * (y * width + x)];
@@ -773,6 +779,7 @@ arv_fake_camera_diagonal_ramp (ArvBuffer *buffer, void *fill_pattern_data,
 						pixel[2] = jet_colormap [index].b;
 					}
 				}
+                                buffer->priv->received_size = 3 * height * width;
 			}
 			break;
 
@@ -833,11 +840,13 @@ arv_fake_camera_fill_buffer (ArvFakeCamera *camera, ArvBuffer *buffer, guint32 *
 	if (camera == NULL || buffer == NULL)
 		return;
 
+        arv_buffer_set_n_parts(buffer, 1);
+
 	width = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_WIDTH);
 	height = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_HEIGHT);
 	payload = arv_fake_camera_get_payload (camera);
 
-	if (buffer->priv->size < payload) {
+	if (buffer->priv->allocated_size < payload) {
 		buffer->priv->status = ARV_BUFFER_STATUS_SIZE_MISMATCH;
 		return;
 	}
@@ -849,15 +858,21 @@ arv_fake_camera_fill_buffer (ArvFakeCamera *camera, ArvBuffer *buffer, guint32 *
 
 	buffer->priv->payload_type = ARV_BUFFER_PAYLOAD_TYPE_IMAGE;
 	buffer->priv->chunk_endianness = G_BIG_ENDIAN;
-	buffer->priv->width = width;
-	buffer->priv->height = height;
-        buffer->priv->x_offset = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_X_OFFSET);
-        buffer->priv->y_offset = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_Y_OFFSET);
 	buffer->priv->status = ARV_BUFFER_STATUS_SUCCESS;
 	buffer->priv->timestamp_ns = g_get_real_time () * 1000;
 	buffer->priv->system_timestamp_ns = buffer->priv->timestamp_ns;
 	buffer->priv->frame_id = camera->priv->frame_id;
-	buffer->priv->pixel_format = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_PIXEL_FORMAT);
+
+        buffer->priv->parts[0].data_offset = 0;
+        buffer->priv->parts[0].component_id = 0;
+        buffer->priv->parts[0].data_type = ARV_BUFFER_PART_DATA_TYPE_2D_IMAGE;
+	buffer->priv->parts[0].pixel_format = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_PIXEL_FORMAT);
+	buffer->priv->parts[0].width = width;
+	buffer->priv->parts[0].height = height;
+        buffer->priv->parts[0].x_offset = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_X_OFFSET);
+        buffer->priv->parts[0].y_offset = _get_register (camera, ARV_FAKE_CAMERA_REGISTER_Y_OFFSET);
+        buffer->priv->parts[0].x_padding = 0;
+        buffer->priv->parts[0].y_padding = 0;
 
 	g_mutex_lock (&camera->priv->fill_pattern_mutex);
 
@@ -868,6 +883,8 @@ arv_fake_camera_fill_buffer (ArvFakeCamera *camera, ArvBuffer *buffer, guint32 *
 					     exposure_time_us, gain, pixel_format);
 
 	g_mutex_unlock (&camera->priv->fill_pattern_mutex);
+
+        buffer->priv->parts[0].size = buffer->priv->received_size;
 
 	if (packet_size != NULL)
 		*packet_size =
@@ -1130,6 +1147,8 @@ arv_fake_camera_new_full (const char *serial_number, const char *genicam_filenam
 	arv_fake_camera_write_register (fake_camera, ARV_GVBS_CONTROL_CHANNEL_PRIVILEGE_OFFSET, 0);
 
 	arv_fake_camera_write_register (fake_camera, ARV_GVBS_STREAM_CHANNEL_0_PACKET_SIZE_OFFSET, 1400);
+
+	arv_fake_camera_write_register (fake_camera, ARV_GVBS_N_NETWORK_INTERFACES_OFFSET, 1);
 
 	arv_fake_camera_write_register (fake_camera, ARV_GVBS_N_STREAM_CHANNELS_OFFSET, 1);
 
